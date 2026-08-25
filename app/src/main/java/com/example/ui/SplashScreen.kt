@@ -7,27 +7,11 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.view.Surface
 import android.view.TextureView
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,9 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -162,8 +143,9 @@ fun SplashScreen(
                                             .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
                                             .build()
                                     )
-                                    // Keep the full portrait frame visible; the dark backdrop fills any letterbox area.
-                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+                                    // Fill the phone display while preserving the video's aspect ratio.
+                                    // The reframed asset keeps the logo and text inside a safe area.
+                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
                                     setOnPreparedListener { mp ->
                                         adjustAspectRatio(textureView, mp.videoWidth, mp.videoHeight, width, height)
                                         mp.isLooping = false
@@ -208,52 +190,15 @@ fun SplashScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Top-Right Elegant Skip Pill Button
-        AnimatedVisibility(
-            visible = isVideoReady,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(top = 16.dp, end = 16.dp)
-        ) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.55f),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { finishOnce() }
-                    .testTag("skip_splash_button")
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = "Lewati",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Skip",
-                        tint = Color.White.copy(alpha = 0.9f),
-                        modifier = Modifier.size(13.dp)
-                    )
-                }
-            }
-        }
+        // Tidak ada tombol skip visual; seluruh overlay tetap dapat diketuk
+        // melalui clickable pada Box di atas untuk melewati splash screen.
     }
 }
 
 /**
- * Adjust the TextureView matrix for a proportional fit-center presentation.
- * The same uniform scale is applied on both axes, so the full video frame stays
- * visible without stretching or horizontal crop; the dark backdrop fills bars.
+ * Adjust the TextureView matrix for a proportional center-crop presentation.
+ * The same uniform scale is applied on both axes, so the video fills the phone
+ * display without stretching; the reframed asset protects important content.
  */
 private fun adjustAspectRatio(
     textureView: TextureView,
@@ -266,9 +211,8 @@ private fun adjustAspectRatio(
 
     val scaleX = viewWidth.toFloat() / videoWidth.toFloat()
     val scaleY = viewHeight.toFloat() / videoHeight.toFloat()
-    // Fit the complete frame. This avoids cutting off the right side of the DApp logo
-    // on devices whose display is narrower than 9:16.
-    val scale = minOf(scaleX, scaleY)
+    // Fill the complete display. The edited asset has safe margins for this crop.
+    val scale = maxOf(scaleX, scaleY)
     val scaledWidth = videoWidth * scale
     val scaledHeight = videoHeight * scale
     val translateX = (viewWidth - scaledWidth) / 2f
