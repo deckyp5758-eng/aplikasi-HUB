@@ -85,9 +85,10 @@ fun SplashScreen(
     var isVideoReady by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
 
-    // Fallback safety timeout (6.5 seconds max) in case of any decoding or resource issue
+    // Fallback safety timeout slightly beyond the current 8-second asset duration.
+    // It prevents a decode stall from blocking startup while allowing the video to finish normally.
     LaunchedEffect(Unit) {
-        delay(6500)
+        delay(9000)
         finishOnce()
     }
 
@@ -249,7 +250,9 @@ fun SplashScreen(
 }
 
 /**
- * Adjust TextureView matrix to achieve a seamless, crisp center-crop full-screen presentation
+ * Adjust the TextureView matrix for a proportional center-crop presentation.
+ * The same uniform scale is applied on both axes, so the video fills the view
+ * without stretching; only the unavoidable edge crop varies by device ratio.
  */
 private fun adjustAspectRatio(
     textureView: TextureView,
@@ -259,16 +262,18 @@ private fun adjustAspectRatio(
     viewHeight: Int
 ) {
     if (videoWidth <= 0 || videoHeight <= 0 || viewWidth <= 0 || viewHeight <= 0) return
-    val sx = viewWidth.toFloat() / videoWidth.toFloat()
-    val sy = viewHeight.toFloat() / videoHeight.toFloat()
-    val scale = maxOf(sx, sy) // Strict Center-Crop to fill full screen without stretching or black bars
+
+    val scaleX = viewWidth.toFloat() / videoWidth.toFloat()
+    val scaleY = viewHeight.toFloat() / videoHeight.toFloat()
+    val scale = maxOf(scaleX, scaleY)
+    val scaledWidth = videoWidth * scale
+    val scaledHeight = videoHeight * scale
+    val translateX = (viewWidth - scaledWidth) / 2f
+    val translateY = (viewHeight - scaledHeight) / 2f
+
     val matrix = Matrix().apply {
-        setScale(
-            (videoWidth.toFloat() / viewWidth.toFloat()) * scale,
-            (videoHeight.toFloat() / viewHeight.toFloat()) * scale,
-            viewWidth / 2f,
-            viewHeight / 2f
-        )
+        setScale(scale, scale)
+        postTranslate(translateX, translateY)
     }
     textureView.setTransform(matrix)
 }
