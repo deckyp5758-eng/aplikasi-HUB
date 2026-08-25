@@ -10,7 +10,9 @@ import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -110,10 +112,10 @@ fun SplashScreen(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF030712)) // Dark sleek backdrop
+            .background(Color(0xFF030712)) // Dark backdrop for any outer letterbox area
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
@@ -124,6 +126,20 @@ fun SplashScreen(
             .testTag("dapp_video_splash"),
         contentAlignment = Alignment.Center
     ) {
+        // Keep the video viewport at the source's exact 9:16 portrait ratio.
+        // On taller phones, the unused top/bottom area remains the same dark color.
+        val targetAspectRatio = 9f / 16f
+        val screenAspectRatio = maxWidth / maxHeight
+        val videoModifier = if (screenAspectRatio < targetAspectRatio) {
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(targetAspectRatio)
+        } else {
+            Modifier
+                .fillMaxHeight()
+                .aspectRatio(targetAspectRatio)
+        }
+
         // TextureView Video Player
         AndroidView(
             factory = { ctx ->
@@ -143,9 +159,8 @@ fun SplashScreen(
                                             .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
                                             .build()
                                     )
-                                    // Fill the phone display while preserving the video's aspect ratio.
-                                    // The reframed asset keeps the logo and text inside a safe area.
-                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+                                    // The viewport is already 9:16; keep the complete frame visible.
+                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
                                     setOnPreparedListener { mp ->
                                         adjustAspectRatio(textureView, mp.videoWidth, mp.videoHeight, width, height)
                                         mp.isLooping = false
@@ -187,7 +202,7 @@ fun SplashScreen(
                     }
                 }
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = videoModifier
         )
 
         // Tidak ada tombol skip visual; seluruh overlay tetap dapat diketuk
@@ -196,9 +211,9 @@ fun SplashScreen(
 }
 
 /**
- * Adjust the TextureView matrix for a proportional center-crop presentation.
- * The same uniform scale is applied on both axes, so the video fills the phone
- * display without stretching; the reframed asset protects important content.
+ * Adjust the TextureView matrix for a proportional fit-center presentation.
+ * The viewport is fixed at 9:16, so the complete video frame remains visible
+ * without stretching or horizontal crop.
  */
 private fun adjustAspectRatio(
     textureView: TextureView,
@@ -211,8 +226,8 @@ private fun adjustAspectRatio(
 
     val scaleX = viewWidth.toFloat() / videoWidth.toFloat()
     val scaleY = viewHeight.toFloat() / videoHeight.toFloat()
-    // Fill the complete display. The edited asset has safe margins for this crop.
-    val scale = maxOf(scaleX, scaleY)
+    // Fit the complete frame inside the 9:16 viewport without cropping.
+    val scale = minOf(scaleX, scaleY)
     val scaledWidth = videoWidth * scale
     val scaledHeight = videoHeight * scale
     val translateX = (viewWidth - scaledWidth) / 2f
