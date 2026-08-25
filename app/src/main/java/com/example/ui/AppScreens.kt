@@ -733,7 +733,7 @@ fun FormScreen(viewModel: FleetViewModel) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -2620,7 +2620,7 @@ fun HistoryScreen(viewModel: FleetViewModel) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Surface(
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
                                         shape = RoundedCornerShape(4.dp),
                                         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                     ) {
@@ -2639,7 +2639,7 @@ fun HistoryScreen(viewModel: FleetViewModel) {
                                     }
                                     
                                     Surface(
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
                                         shape = RoundedCornerShape(4.dp),
                                         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                     ) {
@@ -2658,7 +2658,7 @@ fun HistoryScreen(viewModel: FleetViewModel) {
                                     }
  
                                     Surface(
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
                                         shape = RoundedCornerShape(4.dp),
                                         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                     ) {
@@ -3674,7 +3674,7 @@ fun DashboardScreen(
     val dashboardBgBrush = Brush.verticalGradient(
         colors = listOf(
             MaterialTheme.colorScheme.background,
-            Color(0xFFE3F2FD).copy(alpha = 0.4f),
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             MaterialTheme.colorScheme.background
         )
     )
@@ -3694,8 +3694,8 @@ fun DashboardScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE4E6)),
-                    border = BorderStroke(1.dp, Color(0xFFFDA4AF)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.55f)),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(
@@ -3709,7 +3709,7 @@ fun DashboardScreen(
                             Box(
                                 modifier = Modifier
                                     .size(34.dp)
-                                    .background(Color(0xFFE11D48), CircleShape),
+                                    .background(MaterialTheme.colorScheme.error, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -3723,12 +3723,12 @@ fun DashboardScreen(
                                 Text(
                                     text = "🚨 Notifikasi Aki Armada (${dueAkiList.size} Unit)",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color(0xFF9F1239)
+                                    color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 Text(
                                     text = "Usia aki mendekati/melebihi 2 tahun dari pemasangan (Sheet GID 563918420)",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF881337)
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
                                 )
                             }
                         }
@@ -3853,7 +3853,7 @@ fun DashboardScreen(
                 Text(
                     "Menu Utama",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFF0A2540)
+                    color = MaterialTheme.colorScheme.onBackground
                 )
 
                 // Row 1: Status Armada & Log Harian
@@ -5650,7 +5650,7 @@ fun PengajuanCard(item: PengajuanEntity) {
             Text("Driver: ${item.driver} (${item.noPolisi})", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
