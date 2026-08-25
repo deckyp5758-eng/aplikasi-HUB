@@ -10,9 +10,7 @@ import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -112,10 +110,10 @@ fun SplashScreen(
         }
     }
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF030712)) // Dark backdrop for any outer letterbox area
+            .background(Color(0xFF030712)) // Dark backdrop
             .clickable(
                 interactionSource = interactionSource,
                 indication = null
@@ -126,20 +124,6 @@ fun SplashScreen(
             .testTag("dapp_video_splash"),
         contentAlignment = Alignment.Center
     ) {
-        // Keep the video viewport at the source's exact 9:16 portrait ratio.
-        // On taller phones, the unused top/bottom area remains the same dark color.
-        val targetAspectRatio = 9f / 16f
-        val screenAspectRatio = maxWidth / maxHeight
-        val videoModifier = if (screenAspectRatio < targetAspectRatio) {
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(targetAspectRatio)
-        } else {
-            Modifier
-                .fillMaxHeight()
-                .aspectRatio(targetAspectRatio)
-        }
-
         // TextureView Video Player
         AndroidView(
             factory = { ctx ->
@@ -159,8 +143,7 @@ fun SplashScreen(
                                             .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
                                             .build()
                                     )
-                                    // The viewport is already 9:16; keep the complete frame visible.
-                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
                                     setOnPreparedListener { mp ->
                                         adjustAspectRatio(textureView, mp.videoWidth, mp.videoHeight, width, height)
                                         mp.isLooping = false
@@ -202,7 +185,7 @@ fun SplashScreen(
                     }
                 }
             },
-            modifier = videoModifier
+            modifier = Modifier.fillMaxSize()
         )
 
         // Tidak ada tombol skip visual; seluruh overlay tetap dapat diketuk
@@ -211,9 +194,9 @@ fun SplashScreen(
 }
 
 /**
- * Adjust the TextureView matrix for a proportional fit-center presentation.
- * The viewport is fixed at 9:16, so the complete video frame remains visible
- * without stretching or horizontal crop.
+ * Adjust the TextureView matrix for a proportional center-crop full-screen presentation.
+ * Scales relative to the view center so the video fills the screen while keeping its
+ * aspect ratio intact and properly centered.
  */
 private fun adjustAspectRatio(
     textureView: TextureView,
@@ -224,18 +207,24 @@ private fun adjustAspectRatio(
 ) {
     if (videoWidth <= 0 || videoHeight <= 0 || viewWidth <= 0 || viewHeight <= 0) return
 
-    val scaleX = viewWidth.toFloat() / videoWidth.toFloat()
-    val scaleY = viewHeight.toFloat() / videoHeight.toFloat()
-    // Fit the complete frame inside the 9:16 viewport without cropping.
-    val scale = minOf(scaleX, scaleY)
-    val scaledWidth = videoWidth * scale
-    val scaledHeight = videoHeight * scale
-    val translateX = (viewWidth - scaledWidth) / 2f
-    val translateY = (viewHeight - scaledHeight) / 2f
+    val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
+    val videoRatio = videoWidth.toFloat() / videoHeight.toFloat()
+
+    val scaleX: Float
+    val scaleY: Float
+
+    if (videoRatio > viewRatio) {
+        // Video is wider than view (relative to height): crop left & right equally
+        scaleX = videoRatio / viewRatio
+        scaleY = 1f
+    } else {
+        // Video is taller than view (relative to width): crop top & bottom equally
+        scaleX = 1f
+        scaleY = viewRatio / videoRatio
+    }
 
     val matrix = Matrix().apply {
-        setScale(scale, scale)
-        postTranslate(translateX, translateY)
+        setScale(scaleX, scaleY, viewWidth / 2f, viewHeight / 2f)
     }
     textureView.setTransform(matrix)
 }
