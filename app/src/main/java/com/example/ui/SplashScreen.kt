@@ -162,7 +162,8 @@ fun SplashScreen(
                                             .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
                                             .build()
                                     )
-                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+                                    // Keep the full portrait frame visible; the dark backdrop fills any letterbox area.
+                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
                                     setOnPreparedListener { mp ->
                                         adjustAspectRatio(textureView, mp.videoWidth, mp.videoHeight, width, height)
                                         mp.isLooping = false
@@ -250,9 +251,9 @@ fun SplashScreen(
 }
 
 /**
- * Adjust the TextureView matrix for a proportional center-crop presentation.
- * The same uniform scale is applied on both axes, so the video fills the view
- * without stretching; only the unavoidable edge crop varies by device ratio.
+ * Adjust the TextureView matrix for a proportional fit-center presentation.
+ * The same uniform scale is applied on both axes, so the full video frame stays
+ * visible without stretching or horizontal crop; the dark backdrop fills bars.
  */
 private fun adjustAspectRatio(
     textureView: TextureView,
@@ -265,7 +266,9 @@ private fun adjustAspectRatio(
 
     val scaleX = viewWidth.toFloat() / videoWidth.toFloat()
     val scaleY = viewHeight.toFloat() / videoHeight.toFloat()
-    val scale = maxOf(scaleX, scaleY)
+    // Fit the complete frame. This avoids cutting off the right side of the DApp logo
+    // on devices whose display is narrower than 9:16.
+    val scale = minOf(scaleX, scaleY)
     val scaledWidth = videoWidth * scale
     val scaledHeight = videoHeight * scale
     val translateX = (viewWidth - scaledWidth) / 2f
