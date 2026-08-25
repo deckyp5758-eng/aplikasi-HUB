@@ -143,7 +143,7 @@ fun SplashScreen(
                                             .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
                                             .build()
                                     )
-                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
                                     setOnPreparedListener { mp ->
                                         adjustAspectRatio(textureView, mp.videoWidth, mp.videoHeight, width, height)
                                         mp.isLooping = false
