@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HUB KEDIRI - Driver Portal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Inter Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-[#FEF7FF] text-[#1D1B20] min-h-screen flex flex-col justify-between">
+
+  <!-- Header -->
+  <header class="bg-[#FEF7FF] border-b border-[#CAC4D0] shadow-sm">
+    <div class="max-w-md mx-auto px-6 py-4 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#6750A4]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <span class="font-bold text-lg tracking-wide text-[#1D1B20]">Fleet Odo Portal</span>
+      </div>
+      <div id="driverBadge" class="hidden bg-[#F3EDF7] text-[#49454F] border border-[#CAC4D0] px-3 py-1 rounded-full text-xs font-semibold">
+        <!-- Locked Driver Name -->
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-grow flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-[#FEF7FF] rounded-3xl border border-[#CAC4D0] shadow-md overflow-hidden p-6 relative">
+
+      <!-- LOADING ACCENT BAR -->
+      <div id="loadingBar" class="absolute top-0 left-0 h-1 bg-[#6750A4] w-0 transition-all duration-300"></div>
+
+      <!-- SECTION 1: LOGIN -->
+      <section id="loginSection" class="space-y-6">
+        <div class="text-center space-y-2">
+          <span class="text-xs font-black tracking-widest text-[#6750A4]">HUB KEDIRI</span>
+          <h2 class="text-2xl font-extrabold text-[#1D1B20]">Fleet Odo Tracker</h2>
+          <p class="text-sm text-[#49454F]">Silakan pilih nama Anda dan masukkan PIN keamanan</p>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+          <!-- Dropdown Driver Name -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">Nama Driver</label>
+            <select id="driverSelect" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl px-4 py-3 text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4] cursor-pointer" required>
+              <option value="" disabled selected>Pilih nama Anda...</option>
+              <!-- Populated by GAS -->
+            </select>
+          </div>
+
+          <!-- PIN -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">PIN Keamanan</label>
+            <input type="password" id="driverPin" placeholder="••••" maxlength="6" inputmode="numeric" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl px-4 py-3 text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4] tracking-widest text-center text-lg" required>
+          </div>
+
+          <!-- Login Error -->
+          <div id="loginError" class="hidden text-xs text-red-700 bg-red-100 border border-red-300 rounded-lg p-3"></div>
+
+          <!-- Login Submit -->
+          <button type="submit" id="loginBtn" class="w-full bg-[#6750A4] hover:bg-[#4F378B] active:bg-[#4F378B] text-white font-bold py-3 px-4 rounded-full shadow-sm transition duration-200 flex justify-center items-center">
+            <span id="loginBtnText">Masuk Ke Portal</span>
+            <svg id="loginSpinner" class="hidden animate-spin ml-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </button>
+        </form>
+      </section>
+
+      <!-- SECTION 2: DAILY LOG FORM -->
+      <section id="formSection" class="hidden space-y-6">
+        <div class="text-center space-y-1">
+          <h2 class="text-2xl font-bold text-[#1D1B20]">Catat KM Harian</h2>
+          <p class="text-sm text-[#49454F]">Pastikan angka KM odometer diisi dengan benar</p>
+        </div>
+
+        <form id="logForm" onsubmit="handleLogSubmit(event)" class="space-y-4">
+          <!-- Fleet Dropdown -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">Pilih Armada</label>
+            <select id="armadaSelect" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl px-4 py-3 text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4] cursor-pointer" required>
+              <option value="" disabled selected>Pilih kode armada...</option>
+              <!-- Populated by GAS -->
+            </select>
+          </div>
+
+          <!-- Odometer Input -->
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F]">Kilometer (KM) Terdeteksi</label>
+              <!-- OCR Scanner Indicator -->
+              <div id="ocrStatus" class="hidden flex items-center space-x-1 text-xs text-[#6750A4] font-bold animate-pulse">
+                <svg class="animate-spin h-3.5 w-3.5 text-[#6750A4]" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Memindai Odometer...</span>
+              </div>
+            </div>
+            <div class="relative rounded-xl shadow-sm">
+              <input type="number" id="kmInput" placeholder="Contoh: 45000" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl pl-4 pr-12 py-3 text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4] font-bold" required>
+              <div class="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                <span class="text-[#49454F] font-bold text-sm">KM</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- File Upload Photo (Optional) -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">Foto Odometer (Opsional)</label>
+            <div class="flex items-center justify-center w-full">
+              <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-[#79747E] hover:border-[#6750A4] rounded-xl cursor-pointer bg-[#F3EDF7] hover:bg-[#EADDFF] transition duration-200">
+                <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                  <svg class="w-8 h-8 mb-2 text-[#49454F]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                  <p class="text-xs text-[#49454F]" id="photoStatus">Ketuk untuk mengambil/pilih foto</p>
+                </div>
+                <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="previewFile()" />
+              </label>
+            </div>
+            <!-- Image Preview Box -->
+            <div id="previewContainer" class="hidden mt-3 relative rounded-xl overflow-hidden border border-[#79747E] h-40">
+              <img id="imagePreview" class="w-full h-full object-cover">
+              <button type="button" onclick="clearPreview()" class="absolute top-2 right-2 bg-[#B3261E] hover:bg-red-700 text-white p-2 rounded-full shadow-lg transition duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Notes (Optional) -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">Catatan / Keluhan Armada</label>
+            <textarea id="catatanInput" placeholder="Masukkan keluhan atau catatan tambahan jika ada..." rows="2" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl px-4 py-3 text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4] text-sm"></textarea>
+          </div>
+
+          <!-- Log Submit Error -->
+          <div id="logError" class="hidden text-xs text-red-700 bg-red-100 border border-red-300 rounded-lg p-3"></div>
+
+          <!-- Actions -->
+          <div class="flex space-x-3 pt-2">
+            <button type="button" onclick="handleLogout()" class="w-1/3 bg-[#F3EDF7] hover:bg-[#EADDFF] text-[#49454F] font-semibold py-3 px-4 rounded-full transition duration-150">
+              Keluar
+            </button>
+            <button type="submit" id="submitBtn" class="w-2/3 bg-[#6750A4] hover:bg-[#4F378B] active:bg-[#4F378B] text-white font-bold py-3 px-4 rounded-full shadow-sm transition duration-200 flex justify-center items-center">
+              <span id="submitBtnText">Kirim Data</span>
+              <svg id="submitSpinner" class="hidden animate-spin ml-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- SECTION 3: SUCCESS DIALOG -->
+      <div id="successModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1D1B20]/40 backdrop-blur-xs">
+        <div class="bg-[#FEF7FF] border border-[#CAC4D0] rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-xl">
+          <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-emerald-100 border border-emerald-500 text-emerald-600">
+            <svg class="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-bold text-[#1D1B20]">Log Berhasil Dikirim!</h3>
+          <p class="text-sm text-[#49454F]">Data harian odometer Anda telah terekam dan divalidasi oleh sistem.</p>
+          
+          <!-- SERVICE REMINDER ALERT BLOCK -->
+          <div id="alertBlock" class="hidden bg-[#F9DEDC] border border-[#B3261E] rounded-2xl p-4 space-y-1 text-center">
+            <span class="block text-xs font-bold text-[#B3261E] uppercase tracking-wide">⚠️ Peringatan Servis!</span>
+            <p id="alertMessage" class="text-xs text-[#410E0B]">Sisa KM armada ini adalah <strong id="alertSisaKm">0</strong> KM. Harap segera laporkan ke Admin untuk dijadwalkan servis!</p>
+          </div>
+
+          <button onclick="closeSuccessModal()" class="w-full bg-[#6750A4] hover:bg-[#4F378B] text-white font-bold py-3 px-4 rounded-full shadow-sm transition duration-150">
+            Selesai & Tutup
+          </button>
+        </div>
+      </div>
+
+      <!-- SECTION 4: ARMADA & LOGS TAB -->
+      <section id="armadaSection" class="hidden space-y-4 pb-4">
+        <div class="text-center space-y-1">
+          <h2 class="text-2xl font-bold text-[#1D1B20]">Monitor Status Armada</h2>
+          <p class="text-sm text-[#49454F]">Daftar status kilometer & batas servis berkala</p>
+        </div>
+        
+        <!-- Loading spinner for Armada -->
+        <div id="armadaLoading" class="flex flex-col items-center justify-center py-8 space-y-2">
+          <svg class="animate-spin h-8 w-8 text-[#6750A4]" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span class="text-xs text-[#49454F]">Memuat data armada...</span>
+        </div>
+
+        <div id="armadaContainer" class="space-y-3 overflow-y-auto max-h-[350px] pr-1">
+          <!-- Populated dynamically by JS -->
+        </div>
+      </section>
+
+      <!-- SECTION 5: SETTINGS TAB -->
+      <section id="settingsSection" class="hidden space-y-4 pb-4">
+        <div class="text-center space-y-1">
+          <h2 class="text-2xl font-bold text-[#1D1B20]">Pengaturan Sistem</h2>
+          <p class="text-sm text-[#49454F]">Konfigurasi sinkronisasi spreadsheet & portal</p>
+        </div>
+
+        <div class="space-y-4">
+          <!-- Toggle Google Sheets Sync -->
+          <div class="flex items-center justify-between p-4 bg-[#F3EDF7] rounded-2xl border border-[#CAC4D0]">
+            <div>
+              <span class="block text-sm font-bold text-[#1D1B20]">Google Sheets Sync</span>
+              <span class="block text-xs text-[#49454F]">Sinkronisasi data ke Google Sheets</span>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="sheetsSyncToggle" onchange="toggleSyncMode()" class="sr-only peer">
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#6750A4]"></div>
+            </label>
+          </div>
+
+          <div id="settingsFields" class="space-y-4">
+            <!-- Spreadsheet ID Input -->
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">Google Spreadsheet ID</label>
+              <input type="text" id="spreadsheetIdInput" placeholder="ID Spreadsheet (e.g. 1F9_XG...)" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl px-4 py-3 text-sm text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4]">
+            </div>
+
+            <!-- Apps Script URL Input -->
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-[#49454F] mb-2">Apps Script Web App URL</label>
+              <input type="text" id="appsScriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-[#FEF7FF] border border-[#79747E] rounded-xl px-4 py-3 text-sm text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4]">
+            </div>
+
+            <!-- Save Button -->
+            <button onclick="saveSettings()" class="w-full bg-[#6750A4] hover:bg-[#4F378B] text-white font-bold py-3 px-4 rounded-full text-sm shadow-sm transition duration-150">
+              Simpan Konfigurasi
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 6: ASISTEN BOT TAB -->
+      <section id="aiSection" class="hidden flex flex-col pb-4 space-y-3">
+        <div class="text-center space-y-1">
+          <h2 class="text-2xl font-bold text-[#1D1B20]">Asisten Bot</h2>
+          <p class="text-sm text-[#49454F]">Asisten Bot Cepat & Akurat</p>
+        </div>
+
+        <!-- Chat Bubble Container -->
+        <div id="chatHistory" class="flex-grow overflow-y-auto space-y-3 p-3 bg-[#F3EDF7] rounded-2xl border border-[#CAC4D0] text-xs h-[280px] min-h-[280px] max-h-[280px]">
+          <!-- Welcome Message -->
+          <div class="flex items-start space-x-2">
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">Bot</div>
+            <div class="bg-[#FEF7FF] text-[#1D1B20] p-3 rounded-2xl rounded-tl-none shadow-xs max-w-[85%] border border-[#CAC4D0]">
+              Halo Bos! Saya adalah <strong>Asisten Bot HUB Kediri</strong>.<br><br>
+              Ketik <strong>/bantuan</strong> untuk melihat seluruh daftar perintah pencarian database kendaraan, driver, STNK, dan KIR!
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form id="aiChatForm" onsubmit="handleAiChatSubmit(event)" class="space-y-2">
+          <div class="flex items-center space-x-2">
+            <!-- Text Input -->
+            <input type="text" id="aiChatInput" placeholder="Ketik pesan atau /bantuan..." class="flex-grow bg-[#FEF7FF] border border-[#79747E] rounded-full px-4 py-2.5 text-xs text-[#1D1B20] focus:outline-none focus:ring-2 focus:ring-[#6750A4]" />
+
+            <!-- Send button -->
+            <button type="submit" id="aiSendBtn" class="flex-shrink-0 flex items-center justify-center w-11 h-11 bg-[#6750A4] hover:bg-[#4F378B] text-white rounded-full transition duration-150 shadow-sm active:scale-95">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- BOTTOM NAVIGATION TABS -->
+      <nav id="bottomTabs" class="hidden border-t border-[#CAC4D0] mt-6 -mx-6 -mb-6 flex justify-around bg-[#F3EDF7]">
+        <button onclick="switchTab('form')" id="tab-form" class="flex-1 py-3 text-center text-[#6750A4] font-bold text-xs border-t-2 border-[#6750A4] transition duration-150">
+          Catat KM
+        </button>
+        <button onclick="switchTab('armada')" id="tab-armada" class="flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150">
+          Armada & Logs
+        </button>
+        <button onclick="switchTab('ai')" id="tab-ai" class="flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150">
+          Asisten Bot
+        </button>
+        <button onclick="switchTab('settings')" id="tab-settings" class="flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150">
+          Pengaturan
+        </button>
+      </nav>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-[#FEF7FF] border-t border-[#CAC4D0] py-4">
+    <div class="max-w-md mx-auto text-center text-xs text-[#49454F]">
+      &copy; 2026 Fleet Management System. Powered by Google Apps Script.
+    </div>
+  </footer>
+
+  <script>
+    // Global States
+    let currentDriver = null;
+    let base64PhotoData = "";
+    let photoFileName = "";
+    let photoFileType = "";
+
+    // Run on startup
+    window.addEventListener('load', function() {
+      showProgressBar(30);
+      google.script.run
+        .withSuccessHandler(populateDrivers)
+        .withFailureHandler(handleInitError)
+        .getDrivers();
+      loadSettingsFromStorage();
+    });
+
+    function showProgressBar(percent) {
+      const bar = document.getElementById('loadingBar');
+      if (bar) {
+        bar.style.width = percent + '%';
+        if (percent >= 100) {
+          setTimeout(() => { bar.style.width = '0%'; }, 500);
+        }
+      }
+    }
+
+    // Populate drivers selection
+    function populateDrivers(drivers) {
+      const select = document.getElementById('driverSelect');
+      drivers.forEach(driver => {
+        const opt = document.createElement('option');
+        opt.value = driver.name;
+        opt.textContent = driver.name;
+        select.appendChild(opt);
+      });
+      showProgressBar(100);
+    }
+
+    function handleInitError(err) {
+      showProgressBar(100);
+      alert("Gagal memuat data awal driver: " + err);
+    }
+
+    // Login Handler
+    function handleLogin(e) {
+      e.preventDefault();
+      const driverName = document.getElementById('driverSelect').value;
+      const pin = document.getElementById('driverPin').value;
+      const errorDiv = document.getElementById('loginError');
+
+      if (!driverName) {
+        errorDiv.textContent = "Silakan pilih nama Anda.";
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      // Show loader
+      document.getElementById('loginBtnText').classList.add('hidden');
+      document.getElementById('loginSpinner').classList.remove('hidden');
+      errorDiv.classList.add('hidden');
+      showProgressBar(50);
+
+      // Call Google Apps Script backend
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showProgressBar(100);
+          document.getElementById('loginBtnText').classList.remove('hidden');
+          document.getElementById('loginSpinner').classList.add('hidden');
+
+          if (res.success) {
+            currentDriver = res.driverName;
+            
+            // UI Switch
+            document.getElementById('driverBadge').textContent = currentDriver;
+            document.getElementById('driverBadge').classList.remove('hidden');
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('formSection').classList.remove('hidden');
+            document.getElementById('bottomTabs').classList.remove('hidden');
+
+            // Reset tab styling and go to Form tab
+            switchTab('form');
+
+            // Load fleet dropdown
+            showProgressBar(30);
+            google.script.run
+              .withSuccessHandler(populateArmada)
+              .getArmada();
+          } else {
+            errorDiv.textContent = res.message;
+            errorDiv.classList.remove('hidden');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showProgressBar(100);
+          document.getElementById('loginBtnText').classList.remove('hidden');
+          document.getElementById('loginSpinner').classList.add('hidden');
+          errorDiv.textContent = "Koneksi gagal: " + err;
+          errorDiv.classList.remove('hidden');
+        })
+        .validateLogin(driverName, pin);
+    }
+
+    // Populate Armada Dropdown
+    function populateArmada(armadaList) {
+      const select = document.getElementById('armadaSelect');
+      // Clear options first, keep placeholder
+      select.innerHTML = '<option value="" disabled selected>Pilih kode armada...</option>';
+      
+      armadaList.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.armadaId;
+        opt.textContent = `${item.armadaId} - ${item.noPolisi} (Terakhir: ${item.kmSaatIni} KM)`;
+        select.appendChild(opt);
+      });
+      showProgressBar(100);
+    }
+
+    // Photo Previewer
+    function previewFile() {
+      const file = document.getElementById('photoInput').files[0];
+      const preview = document.getElementById('imagePreview');
+      const container = document.getElementById('previewContainer');
+      const statusText = document.getElementById('photoStatus');
+
+      if (file) {
+        photoFileName = file.name;
+        photoFileType = file.type;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          preview.src = e.target.result;
+          container.classList.remove('hidden');
+          statusText.textContent = `Foto terpilih: ${file.name}`;
+          
+          // Generate raw Base64 data (strip prefix metadata)
+          base64PhotoData = e.target.result.split(',')[1];
+          
+          // Trigger automatic OCR scan immediately
+          runOdometerOcr(base64PhotoData);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    // Runs automatic OCR scanner in the background via Apps Script Drive API
+    function runOdometerOcr(base64Data) {
+      const ocrStatus = document.getElementById('ocrStatus');
+      const kmInput = document.getElementById('kmInput');
+      
+      if (!base64Data) return;
+      
+      // Show scanning spinner & disable input
+      ocrStatus.classList.remove('hidden');
+      kmInput.disabled = true;
+      const oldPlaceholder = kmInput.placeholder;
+      kmInput.placeholder = "Memindai Odometer...";
+      
+      google.script.run
+        .withSuccessHandler(function(res) {
+          // Re-enable input and restore placeholder
+          ocrStatus.classList.add('hidden');
+          kmInput.disabled = false;
+          kmInput.placeholder = oldPlaceholder;
+          
+          if (res.success && res.km) {
+            kmInput.value = res.km;
+            showToast("Odometer berhasil dipindai! Silakan periksa kembali angkanya sebelum mengirim.", "success");
+          } else {
+            console.log("OCR Info: " + (res.message || "Teks tidak terdeteksi"));
+            showToast("Gagal mendeteksi angka odometer. Silakan masukkan KM secara manual.", "error");
+          }
+        })
+        .withFailureHandler(function(err) {
+          ocrStatus.classList.add('hidden');
+          kmInput.disabled = false;
+          kmInput.placeholder = oldPlaceholder;
+          console.error("OCR Failure: " + err);
+          showToast("Koneksi gagal saat memindai. Silakan masukkan KM secara manual.", "error");
+        })
+        .extractKmFromImage(base64Data);
+    }
+
+    // Custom Material Design 3 Toast helper
+    function showToast(message, type = "success") {
+      let container = document.getElementById('toastContainer');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'fixed bottom-20 left-4 right-4 z-50 space-y-2 pointer-events-none flex flex-col items-center';
+        document.body.appendChild(container);
+      }
+      
+      const toast = document.createElement('div');
+      const bgClass = type === "success" ? "bg-emerald-600 text-white border border-emerald-500" : "bg-red-600 text-white border border-red-500";
+      toast.className = `${bgClass} px-4 py-3 rounded-full shadow-lg text-xs font-bold transition duration-300 transform translate-y-2 opacity-0 max-w-sm pointer-events-auto flex items-center space-x-2`;
+      
+      const icon = type === "success" ? 
+        `<svg class="w-4.5 h-4.5 text-white flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>` : 
+        `<svg class="w-4.5 h-4.5 text-white flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`;
+      
+      toast.innerHTML = `${icon}<span>${message}</span>`;
+      container.appendChild(toast);
+      
+      // Animate slide up and fade in
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 50);
+      
+      // Animate exit and removal
+      setTimeout(() => {
+        toast.classList.add('translate-y-2', 'opacity-0');
+        setTimeout(() => {
+          toast.remove();
+        }, 300);
+      }, 4500);
+    }
+
+    function clearPreview() {
+      document.getElementById('photoInput').value = "";
+      document.getElementById('imagePreview').src = "";
+      document.getElementById('previewContainer').classList.add('hidden');
+      document.getElementById('photoStatus').textContent = "Ketuk untuk mengambil/pilih foto";
+      base64PhotoData = "";
+      photoFileName = "";
+      photoFileType = "";
+    }
+
+    // Submit Odometer Daily Log
+    function handleLogSubmit(e) {
+      e.preventDefault();
+      const armadaId = document.getElementById('armadaSelect').value;
+      const km = document.getElementById('kmInput').value;
+      const catatan = document.getElementById('catatanInput').value;
+      const errorDiv = document.getElementById('logError');
+
+      if (!armadaId) {
+        errorDiv.textContent = "Silakan pilih kode armada Anda.";
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+      if (!km || parseInt(km) <= 0) {
+        errorDiv.textContent = "Silakan masukkan angka kilometer (KM) yang valid.";
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      // Show loader
+      document.getElementById('submitBtnText').classList.add('hidden');
+      document.getElementById('submitSpinner').classList.remove('hidden');
+      errorDiv.classList.add('hidden');
+      showProgressBar(50);
+
+      const logData = {
+        driverName: currentDriver,
+        armadaId: armadaId,
+        kmTerdeteksi: parseInt(km),
+        base64Photo: base64PhotoData,
+        photoName: photoFileName,
+        photoMimeType: photoFileType,
+        catatan: catatan
+      };
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showProgressBar(100);
+          document.getElementById('submitBtnText').classList.remove('hidden');
+          document.getElementById('submitSpinner').classList.add('hidden');
+
+          if (res.success) {
+            // Reset Form Fields
+            document.getElementById('logForm').reset();
+            clearPreview();
+
+            // Check for service alerts and show popup
+            const alertBlock = document.getElementById('alertBlock');
+            if (res.serviceAlert) {
+              document.getElementById('alertSisaKm').textContent = res.sisaKm;
+              alertBlock.classList.remove('hidden');
+            } else {
+              alertBlock.classList.add('hidden');
+            }
+
+            // Show Success Modal Dialog
+            document.getElementById('successModal').classList.remove('hidden');
+          } else {
+            errorDiv.textContent = res.message;
+            errorDiv.classList.remove('hidden');
+          }
+        })
+        .withFailureHandler(function(err) {
+          showProgressBar(100);
+          document.getElementById('submitBtnText').classList.remove('hidden');
+          document.getElementById('submitSpinner').classList.add('hidden');
+          errorDiv.textContent = "Gagal mengirim data: " + err;
+          errorDiv.classList.remove('hidden');
+        })
+        .submitLog(logData);
+    }
+
+    // Success Modal Actions
+    function closeSuccessModal() {
+      document.getElementById('successModal').classList.add('hidden');
+      
+      // Refresh fleet data representation inside dropdown for safety
+      showProgressBar(30);
+      google.script.run
+        .withSuccessHandler(populateArmada)
+        .getArmada();
+    }
+
+    // Logout Portal
+    function handleLogout() {
+      currentDriver = null;
+      document.getElementById('driverSelect').value = "";
+      document.getElementById('driverPin').value = "";
+      document.getElementById('logForm').reset();
+      clearPreview();
+      
+      document.getElementById('driverBadge').classList.add('hidden');
+      document.getElementById('formSection').classList.add('hidden');
+      document.getElementById('armadaSection').classList.add('hidden');
+      document.getElementById('settingsSection').classList.add('hidden');
+      document.getElementById('aiSection').classList.add('hidden');
+      document.getElementById('bottomTabs').classList.add('hidden');
+      document.getElementById('loginSection').classList.remove('hidden');
+
+      // Reset AI chat history to prevent cross-login leak
+      resetAiChatHistory();
+    }
+
+    // TAB SYSTEM SWITCHER
+    function switchTab(tab) {
+      document.getElementById('formSection').classList.add('hidden');
+      document.getElementById('armadaSection').classList.add('hidden');
+      document.getElementById('settingsSection').classList.add('hidden');
+      document.getElementById('aiSection').classList.add('hidden');
+
+      // Reset tabs styling
+      document.getElementById('tab-form').className = "flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150";
+      document.getElementById('tab-armada').className = "flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150";
+      document.getElementById('tab-ai').className = "flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150";
+      document.getElementById('tab-settings').className = "flex-1 py-3 text-center text-[#49454F] font-bold text-xs border-t-2 border-transparent transition duration-150";
+
+      if (tab === 'form') {
+        document.getElementById('formSection').classList.remove('hidden');
+        document.getElementById('tab-form').className = "flex-1 py-3 text-center text-[#6750A4] font-bold text-xs border-t-2 border-[#6750A4] transition duration-150";
+      } else if (tab === 'armada') {
+        document.getElementById('armadaSection').classList.remove('hidden');
+        document.getElementById('tab-armada').className = "flex-1 py-3 text-center text-[#6750A4] font-bold text-xs border-t-2 border-[#6750A4] transition duration-150";
+        loadArmadaList();
+      } else if (tab === 'settings') {
+        document.getElementById('settingsSection').classList.remove('hidden');
+        document.getElementById('tab-settings').className = "flex-1 py-3 text-center text-[#6750A4] font-bold text-xs border-t-2 border-[#6750A4] transition duration-150";
+        loadSettingsFromStorage();
+      } else if (tab === 'ai') {
+        document.getElementById('aiSection').classList.remove('hidden');
+        document.getElementById('tab-ai').className = "flex-1 py-3 text-center text-[#6750A4] font-bold text-xs border-t-2 border-[#6750A4] transition duration-150";
+        setTimeout(() => {
+          const chatHistory = document.getElementById('chatHistory');
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+        }, 50);
+      }
+    }
+
+    // AI CHAT FRONTEND LOGIC
+    let aiBase64Data = "";
+    let aiMimeType = "";
+    let aiFileName = "";
+
+    function previewAiFile() {
+      const fileInput = document.getElementById('aiFileInput');
+      const file = fileInput.files[0];
+      if (file) {
+        aiFileName = file.name;
+        aiMimeType = file.type;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          aiBase64Data = e.target.result.split(',')[1];
+          // Show attachment preview info
+          document.getElementById('aiAttachmentName').textContent = file.name;
+          document.getElementById('aiAttachmentContainer').classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function clearAiAttachment() {
+      const fileInput = document.getElementById('aiFileInput');
+      if (fileInput) fileInput.value = "";
+      const container = document.getElementById('aiAttachmentContainer');
+      if (container) container.classList.add('hidden');
+      aiBase64Data = "";
+      aiMimeType = "";
+      aiFileName = "";
+    }
+
+    function resetAiChatHistory() {
+      const chatHistory = document.getElementById('chatHistory');
+      if (chatHistory) {
+        chatHistory.innerHTML = `
+          <!-- Welcome Message -->
+          <div class="flex items-start space-x-2">
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">Bot</div>
+            <div class="bg-[#FEF7FF] text-[#1D1B20] p-3 rounded-2xl rounded-tl-none shadow-xs max-w-[85%] border border-[#CAC4D0]">
+              Halo Bos! Saya adalah <strong>Asisten Bot HUB Kediri</strong>.<br><br>
+              Ketik <strong>/bantuan</strong> untuk melihat seluruh daftar perintah pencarian database kendaraan, driver, STNK, dan KIR!
+            </div>
+          </div>
+        `;
+      }
+      clearAiAttachment();
+    }
+
+    function handleAiChatSubmit(e) {
+      e.preventDefault();
+      const inputEl = document.getElementById('aiChatInput');
+      const chatMessage = inputEl.value.trim();
+      const chatHistory = document.getElementById('chatHistory');
+      
+      if (!chatMessage && !aiBase64Data) {
+        return;
+      }
+
+      // Add user message to UI
+      const userBubble = document.createElement('div');
+      userBubble.className = "flex items-start space-x-2 justify-end";
+      
+      let attachmentHtml = "";
+      if (aiBase64Data) {
+        attachmentHtml = `<div class="text-[10px] bg-purple-100 text-purple-800 px-2.5 py-1 rounded-lg mb-1 font-bold">📎 Berkas: ${aiFileName}</div>`;
+      }
+      
+      userBubble.innerHTML = `
+        <div class="bg-[#EADDFF] text-[#21005D] p-3 rounded-2xl rounded-tr-none shadow-xs max-w-[85%] border border-[#6750A4]/20 text-xs">
+          ${attachmentHtml}
+          <div>${chatMessage || "<em>Mengunggah berkas...</em>"}</div>
+        </div>
+        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">Saya</div>
+      `;
+      chatHistory.appendChild(userBubble);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+
+      // Clear input field immediately
+      inputEl.value = "";
+
+      // Add Bot typing placeholder
+      const aiTypingBubble = document.createElement('div');
+      aiTypingBubble.id = "aiTypingPlaceholder";
+      aiTypingBubble.className = "flex items-start space-x-2";
+      
+      const isOcr = aiBase64Data ? true : false;
+      const loadingText = isOcr ? "Bot sedang memproses berkas..." : "Bot sedang mengetik...";
+      
+      aiTypingBubble.innerHTML = `
+        <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">Bot</div>
+        <div class="bg-[#FEF7FF] text-gray-500 p-3 rounded-2xl rounded-tl-none shadow-xs max-w-[85%] border border-[#CAC4D0] italic flex items-center space-x-2">
+          <svg class="animate-spin h-3.5 w-3.5 text-[#6750A4]" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span>${loadingText}</span>
+        </div>
+      `;
+      chatHistory.appendChild(aiTypingBubble);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+
+      // Capture request parameters before clearing
+      const requestBase64 = aiBase64Data;
+      const requestMimeType = aiMimeType;
+      
+      // Clear attachment form preview
+      clearAiAttachment();
+
+      // Disable inputs during network request
+      document.getElementById('aiSendBtn').disabled = true;
+      document.getElementById('aiChatInput').disabled = true;
+
+      showProgressBar(40);
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          showProgressBar(100);
+          // Remove typing placeholder
+          const placeholder = document.getElementById('aiTypingPlaceholder');
+          if (placeholder) placeholder.remove();
+
+          // Re-enable inputs
+          document.getElementById('aiSendBtn').disabled = false;
+          document.getElementById('aiChatInput').disabled = false;
+
+          const aiBubble = document.createElement('div');
+          aiBubble.className = "flex items-start space-x-2";
+          
+          if (res.success) {
+            // Convert markdown style formatting to html tags
+            let processedMessage = res.message
+              .replace(/\n/g, '<br>')
+              .replace(/\*\*(.*?)\*\?/g, '<strong>$1</strong>')
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              .replace(/\*(.*?)\*/g, '<em>$1</em>');
+            
+            aiBubble.innerHTML = `
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">Bot</div>
+              <div class="bg-[#FEF7FF] text-[#1D1B20] p-3 rounded-2xl rounded-tl-none shadow-xs max-w-[85%] border border-[#CAC4D0]">
+                ${processedMessage}
+              </div>
+            `;
+          } else {
+            aiBubble.innerHTML = `
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">Bot</div>
+              <div class="bg-red-50 text-red-800 p-3 rounded-2xl rounded-tl-none shadow-xs max-w-[85%] border border-red-200">
+                ❌ <strong>Terjadi kesalahan:</strong><br>${res.message}
+              </div>
+            `;
+          }
+          chatHistory.appendChild(aiBubble);
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+        })
+        .withFailureHandler(function(err) {
+          showProgressBar(100);
+          const placeholder = document.getElementById('aiTypingPlaceholder');
+          if (placeholder) placeholder.remove();
+
+          document.getElementById('aiSendBtn').disabled = false;
+          document.getElementById('aiChatInput').disabled = false;
+
+          const errorBubble = document.createElement('div');
+          errorBubble.className = "flex items-start space-x-2";
+          errorBubble.innerHTML = `
+            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#6750A4] flex items-center justify-center text-white text-xs font-bold">AI</div>
+            <div class="bg-red-50 text-red-800 p-3 rounded-2xl rounded-tl-none shadow-xs max-w-[85%] border border-red-200">
+              ❌ <strong>Koneksi Gagal:</strong><br>${err}
+            </div>
+          `;
+          chatHistory.appendChild(errorBubble);
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+        })
+        .callGeminiAPI(requestBase64, requestMimeType, chatMessage);
+    }
+
+    // Helper utility to convert a standard Google Drive open/sharing URL to a direct image link
+    function getDirectDriveImageUrl(url) {
+      if (!url) return '';
+      if (url.startsWith('data:') || (!url.includes('drive.google.com') && !url.includes('google.com'))) return url;
+      
+      let fileId = '';
+      const idMatch = url.match(/[?&]id=([^&#]+)/);
+      if (idMatch) {
+        fileId = idMatch[1];
+      } else {
+        const dMatch = url.match(/\/d\/([^/]+)/);
+        if (dMatch) {
+          fileId = dMatch[1];
+        }
+      }
+      
+      if (fileId) {
+        return `https://lh3.googleusercontent.com/d/${fileId}`;
+      }
+      return url;
+    }
+
+    // Helper utility to convert a standard Google Drive open/sharing URL to a download link
+    function getDownloadDriveImageUrl(url) {
+      if (!url) return '';
+      if (url.startsWith('data:') || (!url.includes('drive.google.com') && !url.includes('google.com'))) return url;
+      
+      let fileId = '';
+      const idMatch = url.match(/[?&]id=([^&#]+)/);
+      if (idMatch) {
+        fileId = idMatch[1];
+      } else {
+        const dMatch = url.match(/\/d\/([^/]+)/);
+        if (dMatch) {
+          fileId = dMatch[1];
+        }
+      }
+      
+      if (fileId) {
+        return `https://drive.google.com/uc?export=download&id=${fileId}`;
+      }
+      return url;
+    }
+
+    // LOAD ARMADA LIST & REDESIGN CARDS
+    function loadArmadaList() {
+      const loading = document.getElementById('armadaLoading');
+      const container = document.getElementById('armadaContainer');
+      loading.classList.remove('hidden');
+      container.innerHTML = '';
+
+      google.script.run
+        .withSuccessHandler(function(armadaList) {
+          loading.classList.add('hidden');
+          if (!armadaList || armadaList.length === 0) {
+            container.innerHTML = '<p class="text-center text-xs text-gray-500 py-4">Tidak ada data armada.</p>';
+            return;
+          }
+
+          armadaList.forEach(item => {
+            const card = document.createElement('div');
+            
+            // Determine colors and badges based on sisaKm
+            let badgeColor, badgeText, tintColor, textColor, containerBg;
+            if (item.sisaKm < 0) {
+              badgeColor = 'bg-[#B3261E]';
+              badgeText = 'SERVICE NOW';
+              tintColor = 'text-[#B3261E]';
+              textColor = 'text-[#B3261E]';
+              containerBg = 'bg-[#F9DEDC]/40';
+            } else if (item.sisaKm < 1000) {
+              badgeColor = 'bg-[#D17800]';
+              badgeText = 'WARNING';
+              tintColor = 'text-[#D17800]';
+              textColor = 'text-[#D17800]';
+              containerBg = 'bg-[#FFDAD6]/30';
+            } else {
+              badgeColor = 'bg-[#6750A4]';
+              badgeText = 'AMAN';
+              tintColor = 'text-[#6750A4]';
+              textColor = 'text-[#6750A4]';
+              containerBg = 'bg-[#F3EDF7]';
+            }
+
+            card.className = `${containerBg} border border-[#CAC4D0] rounded-2xl p-3 flex flex-col space-y-2 shadow-sm text-xs transition duration-200`;
+            
+            const hasPhoto = item.fotoKm && item.fotoKm.trim().length > 0;
+            const directImgUrl = hasPhoto ? getDirectDriveImageUrl(item.fotoKm) : '';
+
+            card.innerHTML = `
+              <!-- Header -->
+              <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                  <svg class="w-4 h-4 ${tintColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                  </svg>
+                  <span class="font-bold text-gray-800">${item.armadaId} - ${item.noPolisi}</span>
+                </div>
+                <span class="px-2 py-0.5 text-[9px] font-bold rounded-full ${badgeColor} text-white">${badgeText}</span>
+              </div>
+              
+              <!-- Middle KM Section (2 Column Vertical, split by border) -->
+              <div class="grid grid-cols-2 gap-2 border-t border-b border-[#CAC4D0]/30 py-2">
+                <div class="flex flex-col border-r border-[#CAC4D0]/30 pr-2">
+                  <span class="text-[9px] text-gray-500 uppercase tracking-wide">KM Saat Ini</span>
+                  <span class="font-semibold text-gray-800 text-sm">${item.kmSaatIni.toLocaleString('id-ID')} KM</span>
+                </div>
+                <div class="flex flex-col pl-2">
+                  <span class="text-[9px] text-gray-500 uppercase tracking-wide">Batas Servis</span>
+                  <span class="font-semibold text-gray-800 text-sm">${item.kmServiceBerikutnya.toLocaleString('id-ID')} KM</span>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="pt-1 flex flex-col space-y-2">
+                <span class="font-bold ${textColor}">Sisa: ${item.sisaKm.toLocaleString('id-ID')} KM lagi</span>
+                
+                <div class="border-t border-[#CAC4D0]/20 pt-2 mt-1">
+                  <span class="text-[10px] font-bold text-gray-500 block">Foto Odometer Terakhir:</span>
+                  ${hasPhoto ? `
+                    <div class="relative w-full h-48 bg-slate-200 rounded-xl mt-1.5 overflow-hidden border border-slate-200 shadow-sm">
+                      <!-- Skeleton Loader -->
+                      <div class="absolute inset-0 bg-slate-300 animate-pulse flex items-center justify-center text-[10px] text-slate-500" id="skel-${item.armadaId}">
+                        <div class="flex flex-col items-center space-y-1">
+                          <svg class="animate-spin h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span>Memuat foto...</span>
+                        </div>
+                      </div>
+                      <img 
+                        src="${directImgUrl}" 
+                        onload="document.getElementById('skel-${item.armadaId}').classList.add('hidden')"
+                        onerror="this.src='https://placehold.co/400x300?text=Foto+Tidak+Ditemukan'; document.getElementById('skel-${item.armadaId}').classList.add('hidden')"
+                        class="w-full h-48 object-cover rounded-xl transition-all duration-300 hover:scale-[1.02]"
+                        alt="Foto Odometer ${item.armadaId}"
+                      />
+                    </div>
+                    <!-- Download Photo Button -->
+                    <a 
+                      href="${getDownloadDriveImageUrl(item.fotoKm)}" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      class="flex items-center justify-center gap-2 mt-2 w-full py-2 px-4 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl transition-all border border-purple-200 shadow-sm active:scale-[0.98]"
+                    >
+                      <span>📥 Unduh Foto Odometer</span>
+                    </a>
+                  ` : `
+                    <span class="block text-[10px] text-slate-400 italic mt-1">*Belum ada riwayat foto Odometer*</span>
+                  `}
+                </div>
+              </div>
+            `;
+            container.appendChild(card);
+          });
+        })
+        .withFailureHandler(function(err) {
+          loading.classList.add('hidden');
+          container.innerHTML = `<p class="text-center text-xs text-red-500 py-4">Gagal memuat: ${err}</p>`;
+        })
+        .getArmada();
+    }
+
+    // SETTINGS STATE MANAGEMENT
+    function loadSettingsFromStorage() {
+      const syncToggle = document.getElementById('sheetsSyncToggle');
+      const spreadsheetIdInput = document.getElementById('spreadsheetIdInput');
+      const appsScriptUrlInput = document.getElementById('appsScriptUrlInput');
+
+      const isSyncEnabled = localStorage.getItem('googleSheetsSync') === 'true';
+      const ssId = localStorage.getItem('spreadsheetId') || '';
+      const scriptUrl = localStorage.getItem('appsScriptUrl') || '';
+
+      if (syncToggle) syncToggle.checked = isSyncEnabled;
+      if (spreadsheetIdInput) spreadsheetIdInput.value = ssId;
+      if (appsScriptUrlInput) appsScriptUrlInput.value = scriptUrl;
+
+      toggleSyncMode();
+    }
+
+    function toggleSyncMode() {
+      const syncToggle = document.getElementById('sheetsSyncToggle');
+      const settingsFields = document.getElementById('settingsFields');
+      if (!syncToggle || !settingsFields) return;
+      
+      const isSyncEnabled = syncToggle.checked;
+      if (isSyncEnabled) {
+        settingsFields.classList.remove('hidden');
+      } else {
+        settingsFields.classList.add('hidden');
+      }
+    }
+
+    // Save settings locally
+    function saveSettings() {
+      const isSyncEnabled = document.getElementById('sheetsSyncToggle').checked;
+      const ssId = document.getElementById('spreadsheetIdInput').value;
+      const scriptUrl = document.getElementById('appsScriptUrlInput').value;
+
+      localStorage.setItem('googleSheetsSync', isSyncEnabled ? 'true' : 'false');
+      localStorage.setItem('spreadsheetId', ssId);
+      localStorage.setItem('appsScriptUrl', scriptUrl);
+
+      alert("Konfigurasi berhasil disimpan!");
+    }
+  </script>
+</body>
+</html>

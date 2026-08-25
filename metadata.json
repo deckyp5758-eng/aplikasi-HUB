@@ -1,0 +1,6 @@
+{
+  "name": "HUB KEDIRI",
+  "description": "Aplikasi pencatatan KM harian & manajemen armada logistik Hub Kediri, terintegrasi dengan Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
