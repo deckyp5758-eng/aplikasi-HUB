@@ -318,7 +318,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun login(onSuccess: () -> Unit) {
-        val cleanDriverId = InputSanitizer.sanitizeAlphanumeric(_selectedDriverName.value)
+        val cleanDriverId = InputSanitizer.sanitizeText(_selectedDriverName.value)
         val cleanPin = InputSanitizer.sanitizeNumeric(_pinInput.value)
 
         if (cleanDriverId.isEmpty()) {

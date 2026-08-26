@@ -161,11 +161,43 @@ fun LoginScreen(viewModel: FleetViewModel) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
+                        if (drivers.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Pilih ID Driver Terdaftar:",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    drivers.forEach { driver ->
+                                        val isSelected = selectedDriver.trim().equals(driver.idDriver.trim(), ignoreCase = true) ||
+                                                selectedDriver.trim().equals(driver.namaDriver.trim(), ignoreCase = true)
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                viewModel.setSelectedDriver(driver.idDriver)
+                                            },
+                                            label = {
+                                                Text(
+                                                    text = "${driver.idDriver} (${driver.namaDriver})",
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         OutlinedTextField(
                             value = selectedDriver,
                             onValueChange = { viewModel.setSelectedDriver(it) },
-                            label = { Text("ID Driver") },
-                            placeholder = { Text("Contoh: D01") },
+                            label = { Text("ID Driver / Nama") },
+                            placeholder = { Text("Contoh: D01 atau Driver HUB 1") },
                             leadingIcon = { Icon(Icons.Default.Person, contentDescription = "ID Driver Icon") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -179,6 +211,7 @@ fun LoginScreen(viewModel: FleetViewModel) {
                             value = pin,
                             onValueChange = { viewModel.setPin(it) },
                             label = { Text("PIN Keamanan") },
+                            placeholder = { Text("PIN Default D01: 1234 | D02: 5678") },
                             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "PIN Icon") },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.NumberPassword,

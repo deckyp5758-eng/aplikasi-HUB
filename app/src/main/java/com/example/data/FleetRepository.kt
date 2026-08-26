@@ -303,10 +303,17 @@ class FleetRepository(
         // Filter out bypasses if any managed to slip through
         val filteredDrivers = allDrivers.filter { it.idDriver != "Wahyu" && it.idDriver != "D03" && it.namaDriver != "Wahyu" }
 
-        // 2. Cari kecocokan pengemudi secara case-insensitive berdasarkan ID atau Nama
+        // 2. Cari kecocokan pengemudi secara case-insensitive berdasarkan ID, Nama, atau format tanpa spasi
+        val cleanInput = driverIdOrName.trim().lowercase().replace(" ", "").replace("-", "")
         val matchingDriver = filteredDrivers.find {
+            val cleanId = it.idDriver.trim().lowercase().replace(" ", "").replace("-", "")
+            val cleanName = it.namaDriver.trim().lowercase().replace(" ", "").replace("-", "")
+
             it.idDriver.trim().equals(driverIdOrName.trim(), ignoreCase = true) ||
-            it.namaDriver.trim().equals(driverIdOrName.trim(), ignoreCase = true)
+            it.namaDriver.trim().equals(driverIdOrName.trim(), ignoreCase = true) ||
+            cleanId == cleanInput ||
+            cleanName == cleanInput ||
+            (cleanId.startsWith("d") && cleanInput.startsWith("d") && cleanId.trimStart('d').toIntOrNull() != null && cleanId.trimStart('d').toIntOrNull() == cleanInput.trimStart('d').toIntOrNull())
         }
 
         // Jika tidak ditemukan di database terdaftar, tolak langsung login acak ini
@@ -354,7 +361,7 @@ class FleetRepository(
                         LoginResult.Success(response.driverName, returnedId)
                     }
                 } else {
-                    LoginResult.Error(response.message ?: "PIN salah atau Driver tidak terdaftar.")
+                    LoginResult.Error(response.message ?: "PIN Keamanan salah.")
                 }
             } catch (e: Exception) {
                 // Fallback verifikasi lokal jika server tidak dapat dihubungi (luring)
@@ -363,7 +370,7 @@ class FleetRepository(
                     prefs.loggedInDriverId = matchingDriver.idDriver
                     LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
                 } else {
-                    LoginResult.Error("Gagal menghubungi Google Sheets: ${e.localizedMessage}. Dan PIN lokal tidak cocok.")
+                    LoginResult.Error("PIN Keamanan salah.")
                 }
             }
         } else {

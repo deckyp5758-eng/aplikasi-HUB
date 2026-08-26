@@ -324,4 +324,66 @@ class FleetAppComprehensiveTest {
         assertEquals(1, pengajuans.size)
         assertEquals("PENDING", pengajuans[0].status)
     }
+
+    // ==========================================
+    // 3. UJI LOG MASUK DRIVER ID DEMI ID (1 PER 1)
+    // ==========================================
+
+    @Test
+    fun testDriverLogin1By1() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = PreferenceManager(context)
+        prefs.isGoogleSheetsMode = false
+        val repository = FleetRepository(context, db, prefs)
+
+        // Reset database drivers to default set (D01 & D02)
+        driverDao.deleteAllDrivers()
+        driverDao.insertDrivers(
+            listOf(
+                DriverEntity("D01", "Driver HUB 1", "1234"),
+                DriverEntity("D02", "Driver HUB 2", "5678")
+            )
+        )
+
+        // --- ID 1: D01 ---
+        // 1a. Test ID D01 with correct PIN (1234)
+        val resD01Success = repository.validateLogin("D01", "1234")
+        assertTrue(resD01Success is LoginResult.Success)
+        assertEquals("Driver HUB 1", (resD01Success as LoginResult.Success).driverName)
+        assertEquals("D01", resD01Success.driverId)
+
+        // 1b. Test ID D01 with wrong PIN (9999)
+        val resD01Fail = repository.validateLogin("D01", "9999")
+        assertTrue(resD01Fail is LoginResult.Error)
+        assertEquals("PIN Keamanan salah.", (resD01Fail as LoginResult.Error).message)
+
+        // 1c. Test lowercase id "d01" with correct PIN (1234)
+        val resD01Lower = repository.validateLogin("d01", "1234")
+        assertTrue(resD01Lower is LoginResult.Success)
+
+        // 1d. Test Full Name "Driver HUB 1" with correct PIN (1234)
+        val resName01Success = repository.validateLogin("Driver HUB 1", "1234")
+        assertTrue(resName01Success is LoginResult.Success)
+
+        // --- ID 2: D02 ---
+        // 2a. Test ID D02 with correct PIN (5678)
+        val resD02Success = repository.validateLogin("D02", "5678")
+        assertTrue(resD02Success is LoginResult.Success)
+        assertEquals("Driver HUB 2", (resD02Success as LoginResult.Success).driverName)
+        assertEquals("D02", resD02Success.driverId)
+
+        // 2b. Test ID D02 with wrong PIN (1234)
+        val resD02Fail = repository.validateLogin("D02", "1234")
+        assertTrue(resD02Fail is LoginResult.Error)
+        assertEquals("PIN Keamanan salah.", (resD02Fail as LoginResult.Error).message)
+
+        // 2c. Test Full Name "Driver HUB 2" with correct PIN (5678)
+        val resName02Success = repository.validateLogin("Driver HUB 2", "5678")
+        assertTrue(resName02Success is LoginResult.Success)
+
+        // --- ID 3: Unregistered ID (D99 / Random) ---
+        val resUnregistered = repository.validateLogin("D99", "1234")
+        assertTrue(resUnregistered is LoginResult.Error)
+        assertEquals("ID Driver atau Nama tidak terdaftar di sistem.", (resUnregistered as LoginResult.Error).message)
+    }
 }

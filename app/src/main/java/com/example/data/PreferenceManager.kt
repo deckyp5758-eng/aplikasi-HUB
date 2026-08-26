@@ -6,7 +6,13 @@ import com.example.utils.SecureStorageManager
 
 class PreferenceManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("fleet_prefs", Context.MODE_PRIVATE)
-    private val secureStorage: SecureStorageManager = SecureStorageManager(context)
+    private val secureStorage: SecureStorageManager? by lazy {
+        try {
+            SecureStorageManager(context)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     var isGoogleSheetsMode: Boolean
         get() = prefs.getBoolean("is_google_sheets_mode", true)
@@ -30,13 +36,13 @@ class PreferenceManager(context: Context) {
 
     var geminiApiKey: String
         get() {
-            val secureKey = secureStorage.getString("encrypted_gemini_key", "")
+            val secureKey = try { secureStorage?.getString("encrypted_gemini_key", "") ?: "" } catch (e: Exception) { "" }
             if (secureKey.isNotEmpty()) return secureKey
             return prefs.getString("gemini_api_key", "") ?: ""
         }
         set(value) {
             try {
-                secureStorage.saveString("encrypted_gemini_key", value)
+                secureStorage?.saveString("encrypted_gemini_key", value)
             } catch (e: Exception) {
                 // Fallback to standard prefs if KeyStore fails on some custom ROMs
                 prefs.edit().putString("gemini_api_key", value).apply()
