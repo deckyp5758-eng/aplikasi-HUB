@@ -13,7 +13,7 @@ class PreferenceManager(context: Context) {
         set(value) = prefs.edit().putBoolean("is_google_sheets_mode", value).apply()
 
     var appsScriptUrl: String
-        get() = prefs.getString("apps_script_url", "https://script.google.com/macros/s/AKfycbwIi3NgpIPSG1dVvoJVYOjnpXOUVOpghkV-WOhGeQr6Cl2nqoqVawqvRZqGg10Pwb9c5A/exec") ?: "https://script.google.com/macros/s/AKfycbwIi3NgpIPSG1dVvoJVYOjnpXOUVOpghkV-WOhGeQr6Cl2nqoqVawqvRZqGg10Pwb9c5A/exec"
+        get() = prefs.getString("apps_script_url", "https://script.google.com/macros/s/AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ/exec") ?: "https://script.google.com/macros/s/AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ/exec"
         set(value) = prefs.edit().putString("apps_script_url", value).apply()
 
     var googleSheetId: String
