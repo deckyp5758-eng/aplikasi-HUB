@@ -674,9 +674,11 @@ function calculateAkiGantiDateAndStatus(tglStr, userKeterangan) {
 // ============================================
 
 function validateLogin(contents, ss, sheetMap) {
-  var driverIdOrName = String(contents.driverName || contents.username || contents.driverId || "").trim();
+    var driverIdOrName = String(contents.driverName || contents.username || contents.driverId || "").trim();
   var pin = String(contents.pin || "").trim();
-
+  if (!driverIdOrName || !pin) {
+    return { success: false, driverId: null, driverName: null, message: "ID Driver dan PIN wajib diisi." };
+  }
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
   var sheet = getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
@@ -690,13 +692,13 @@ function validateLogin(contents, ss, sheetMap) {
       var storedPin = data[i][2] ? String(data[i][2]).trim() : "";
 
       if (id.toLowerCase() === driverIdOrName.toLowerCase() || name.toLowerCase() === driverIdOrName.toLowerCase()) {
-        if (!pin || !storedPin || storedPin === pin) {
+        if (storedPin && storedPin === pin) {
           return { success: true, driverId: id || "D01", driverName: name || driverIdOrName, message: "Login Berhasil" };
         }
       }
     }
   }
-  return { success: true, driverId: "D01", driverName: driverIdOrName || "Driver HUB", message: "Login Berhasil" };
+  return { success: false, driverId: null, driverName: null, message: "ID Driver atau PIN salah." };
 }
 
 // ============================================

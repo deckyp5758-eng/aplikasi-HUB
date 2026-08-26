@@ -300,12 +300,9 @@ class FleetRepository(
             allDrivers = defaults
         }
 
-        // Filter out bypasses if any managed to slip through
-        val filteredDrivers = allDrivers.filter { it.idDriver != "Wahyu" && it.idDriver != "D03" && it.namaDriver != "Wahyu" }
-
         // 2. Cari kecocokan pengemudi secara case-insensitive berdasarkan ID, Nama, atau format tanpa spasi
         val cleanInput = driverIdOrName.trim().lowercase().replace(" ", "").replace("-", "")
-        val matchingDriver = filteredDrivers.find {
+        val matchingDriver = allDrivers.find {
             val cleanId = it.idDriver.trim().lowercase().replace(" ", "").replace("-", "")
             val cleanName = it.namaDriver.trim().lowercase().replace(" ", "").replace("-", "")
 
