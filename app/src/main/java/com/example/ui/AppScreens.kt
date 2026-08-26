@@ -1251,7 +1251,7 @@ fun DetailArmadaDialog(
                 val cArmadaKey = armada.armadaId.replace(Regex("[\\s\\-\\.]"), "").uppercase()
                 val cNopolKey = armada.noPolisi.replace(Regex("[\\s\\-\\.]"), "").uppercase()
 
-                // Aki Information Section (Sheet GID 563918420)
+                // Aki Information Section (Sheet GID 1886867333)
                 val armadaAki = banList.firstOrNull { 
                     it.posisi.trim().uppercase() == "AKI" && (
                         it.armadaId.replace(Regex("[\\s\\-\\.]"), "").uppercase() == cArmadaKey ||
@@ -1475,7 +1475,7 @@ fun DetailArmadaDialog(
                                                     color = MaterialTheme.colorScheme.onSurface
                                                 )
                                                 Text(
-                                                    text = "Sheet GID 563918420 • Masa Pakai 2 Thn",
+                                                    text = "Sheet GID 1886867333 • Masa Pakai 2 Thn",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1947,7 +1947,7 @@ fun DetailArmadaDialog(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
-                        text = if (isAkiEdit) "Edit Data Aki Armada (Sheet GID 563918420)" else "Edit Data Ban",
+                        text = if (isAkiEdit) "Edit Data Aki Armada (Sheet GID 1886867333)" else "Edit Data Ban",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -3726,7 +3726,7 @@ fun DashboardScreen(
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 Text(
-                                    text = "Usia aki mendekati/melebihi 2 tahun dari pemasangan (Sheet GID 563918420)",
+                                    text = "Usia aki mendekati/melebihi 2 tahun dari pemasangan (Sheet GID 1886867333)",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
                                 )
@@ -4402,7 +4402,7 @@ fun ArsipPengirimanScreen(viewModel: FleetViewModel, driverName: String) {
                 }
             },
             text = {
-                Text("Bukti pengiriman Anda telah berhasil diarsipkan ke sistem Google Sheets GID 1531520840.")
+                Text("Bukti pengiriman Anda telah berhasil diarsipkan ke sistem Google Sheets GID 1878433267.")
             },
             confirmButton = {
                 Button(
@@ -5389,7 +5389,7 @@ fun PengajuanScreen(viewModel: FleetViewModel, driverName: String) {
                                     mediaFiles = filesToSubmit,
                                     onResult = { success, msg ->
                                         if (success) {
-                                            successDialogMsg = "Pengajuan Aksesoris berhasil dikirim ke Google Sheets (GID 1474380133) & disimpan di Google Drive 1Kk9f5f8_o8puwA3ZNJAKa_9cVy5TN5Lh!"
+                                            successDialogMsg = "Pengajuan Aksesoris berhasil dikirim ke Google Sheets (GID 1517362778) & disimpan di Google Drive 1Kk9f5f8_o8puwA3ZNJAKa_9cVy5TN5Lh!"
                                             showSuccessDialog = true
                                         } else {
                                             validationErrorMsg = "❌ Gagal mengirim: $msg"
@@ -5442,7 +5442,7 @@ fun PengajuanScreen(viewModel: FleetViewModel, driverName: String) {
                                     mediaFiles = filesToSubmit,
                                     onResult = { success, msg ->
                                         if (success) {
-                                            successDialogMsg = "Pengajuan Ban ${selectedBan.posisi} berhasil dikirim ke Google Sheets (GID 1474380133) & disimpan di Drive folder PENGAJUAN!"
+                                            successDialogMsg = "Pengajuan Ban ${selectedBan.posisi} berhasil dikirim ke Google Sheets (GID 1517362778) & disimpan di Drive folder PENGAJUAN!"
                                             showSuccessDialog = true
                                         } else {
                                             validationErrorMsg = "❌ Gagal mengirim: $msg"

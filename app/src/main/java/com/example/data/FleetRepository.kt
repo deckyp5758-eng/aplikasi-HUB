@@ -21,10 +21,21 @@ class FleetRepository(
     private val prefs: PreferenceManager
 ) {
     companion object {
-        const val SPREADSHEET_PENGIRIMAN = "1C3ueWkDAUnG7BA6zSX_osvNSsAjPSMuFI8u5J4XqMc0"
-        const val SPREADSHEET_PENGIRIMAN_LOG = "1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4"
-        const val SPREADSHEET_ARMADA = "1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4"
-        const val SPREADSHEET_AI_DATA = "1_04rOtZLPKmOhOoj0-GVN0XOkO41x54FoHpdp5yu_74"
+        const val SPREADSHEET_PENGIRIMAN = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw"
+        const val SPREADSHEET_PENGIRIMAN_LOG = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw"
+        const val SPREADSHEET_ARMADA = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw"
+        const val SPREADSHEET_AI_DATA = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw"
+
+        const val GID_ARSIP_PENGIRIMAN = "1878433267"
+        const val GID_LOG_HARIAN = "1263706817"
+        const val GID_KIR_PAJAK = "2062052578"
+        const val GID_AKI = "1886867333"
+        const val GID_PENGAJUAN = "1517362778"
+        const val GID_DAFTAR_DRIVER = "479314622"
+        const val GID_ARMADA = "1850941825"
+        const val GID_BAN = "817527065"
+        const val GID_CATATAN_DRIVER = "1562754278"
+        const val GID_AI_DATA = "888604592"
     }
 
     val localDrivers: Flow<List<DriverEntity>> = db.driverDao().getAllDrivers()
@@ -66,138 +77,6 @@ class FleetRepository(
         }
     }
 
-    suspend fun getPengirimanList(): List<PengirimanEntity> {
-        val defaultSamples = listOf(
-            PengirimanEntity(
-                noDokumen = "DOK-2026-001",
-                noSuratJalan = "SJ/20260723/001",
-                tanggal = "23/07/2026",
-                driver = "Driver HUB 1",
-                armada = "HK01",
-                gudangAsal = "Gudang Kediri Utama",
-                tujuan = "Jl. Raya Surabaya No. 45, Surabaya",
-                alamat = "Jl. Raya Surabaya No. 45, Surabaya",
-                penerima = "PT Sinar Agung",
-                noTelpCustomer = "081234567890",
-                remarks = "Sparepart otomotif",
-                jumlahKoli = 35,
-                volumeCbm = 3.5,
-                status = "Belum Berangkat",
-                catatan = "Barang sparepart otomotif"
-            ),
-            PengirimanEntity(
-                noDokumen = "DOK-2026-002",
-                noSuratJalan = "SJ/20260723/002",
-                tanggal = "23/07/2026",
-                driver = "Driver HUB 2",
-                armada = "HK02",
-                gudangAsal = "Gudang Kediri Utama",
-                tujuan = "Jl. Veteran No. 12, Malang",
-                alamat = "Jl. Veteran No. 12, Malang",
-                penerima = "Toko Jaya Bersama",
-                noTelpCustomer = "081987654321",
-                remarks = "Paket sembako logistik",
-                jumlahKoli = 50,
-                volumeCbm = 6.2,
-                status = "TERKIRIM",
-                catatan = "Diterima oleh Pak Budi"
-            ),
-            PengirimanEntity(
-                noDokumen = "DOK-2026-003",
-                noSuratJalan = "SJ/20260724/003",
-                tanggal = "24/07/2026",
-                driver = "Driver HUB 1",
-                armada = "HK03",
-                gudangAsal = "Gudang Kediri Cabang",
-                tujuan = "Jl. Ahmad Yani No. 88, Blitar",
-                alamat = "Jl. Ahmad Yani No. 88, Blitar",
-                penerima = "CV Maju Selalu",
-                noTelpCustomer = "085678901234",
-                remarks = "Muatan bahan pokok curah",
-                jumlahKoli = 20,
-                volumeCbm = 1.8,
-                status = "Belum Berangkat",
-                catatan = "Pemberangkatan besok pagi"
-            )
-        )
-
-        return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
-            try {
-                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.getPengiriman(
-                    action = "getPengiriman",
-                    spreadsheetId = SPREADSHEET_PENGIRIMAN
-                )
-                if (response.success && !response.data.isNullOrEmpty()) {
-                    val existingLocalMap = db.pengirimanDao().getAllPengiriman().first().associateBy { 
-                        (it.noSuratJalan.ifBlank { it.noDokumen }).lowercase().trim()
-                    }
-                    val entities = response.data.mapIndexed { index, item ->
-                        val docKey = (item.noSuratJalan ?: "").ifBlank { item.noDokumen ?: "" }.lowercase().trim()
-                        val localItem = existingLocalMap[docKey]
-                        val finalStatus = when {
-                            localItem?.status == "TERKIRIM" || localItem?.status == "Selesai" -> "TERKIRIM"
-                            localItem?.status == "Dalam Perjalanan" -> "Dalam Perjalanan"
-                            !item.status.isNullOrBlank() -> item.status
-                            else -> "Belum Berangkat"
-                        }
-                        val finalCatatan = if ((localItem?.status == "TERKIRIM" || localItem?.status == "Selesai") && !localItem.catatan.isNullOrBlank()) {
-                            localItem.catatan
-                        } else {
-                            item.catatan ?: item.remarks ?: ""
-                        }
-
-                        PengirimanEntity(
-                            id = if (item.id != null && item.id > 0) item.id else (index + 1),
-                            noDokumen = item.noDokumen ?: localItem?.noDokumen ?: "",
-                            noSuratJalan = item.noSuratJalan ?: localItem?.noSuratJalan ?: "",
-                            tanggal = item.tanggal ?: localItem?.tanggal ?: "",
-                            driver = item.driver ?: localItem?.driver ?: "",
-                            driver1 = item.driver1 ?: localItem?.driver1 ?: "",
-                            driver2 = item.driver2 ?: localItem?.driver2 ?: "",
-                            armada = item.armada ?: localItem?.armada ?: "",
-                            gudangAsal = item.gudangAsal ?: localItem?.gudangAsal ?: "",
-                            tujuan = item.tujuan ?: item.alamat ?: localItem?.tujuan ?: "",
-                            alamat = item.alamat ?: item.tujuan ?: localItem?.alamat ?: "",
-                            remarks = item.remarks ?: item.catatan ?: localItem?.remarks ?: "",
-                            penerima = item.penerima ?: localItem?.penerima ?: "",
-                            noTelpCustomer = item.noTelpCustomer ?: localItem?.noTelpCustomer ?: "",
-                            jumlahKoli = item.jumlahKoli ?: localItem?.jumlahKoli ?: 1,
-                            volumeCbm = item.volumeCbm ?: localItem?.volumeCbm ?: 0.0,
-                            status = finalStatus,
-                            catatan = finalCatatan
-                        )
-                    }
-                    db.pengirimanDao().clearAllPengiriman()
-                    db.pengirimanDao().insertAllPengiriman(entities)
-                    entities
-                } else {
-                    var local = db.pengirimanDao().getAllPengiriman().first()
-                    if (local.isEmpty()) {
-                        db.pengirimanDao().insertAllPengiriman(defaultSamples)
-                        local = defaultSamples
-                    }
-                    local
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                var local = db.pengirimanDao().getAllPengiriman().first()
-                if (local.isEmpty()) {
-                    db.pengirimanDao().insertAllPengiriman(defaultSamples)
-                    local = defaultSamples
-                }
-                local
-            }
-        } else {
-            var local = db.pengirimanDao().getAllPengiriman().first()
-            if (local.isEmpty()) {
-                db.pengirimanDao().insertAllPengiriman(defaultSamples)
-                local = defaultSamples
-            }
-            local
-        }
-    }
-
     suspend fun submitTerkirim(
         pengiriman: PengirimanEntity,
         catatanDriver: String,
@@ -228,14 +107,11 @@ class FleetRepository(
                         catatan = catatanDriver,
                         files = mediaFiles,
                         spreadsheetId = targetSheetId,
-                        sheetId = "1531520840"
+                        sheetId = GID_ARSIP_PENGIRIMAN
                     ),
                     spreadsheetId = targetSheetId,
-                    sheetId = "1531520840"
+                    sheetId = GID_ARSIP_PENGIRIMAN
                 )
-                if (response.success) {
-                    getPengirimanList()
-                }
                 response
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -275,10 +151,10 @@ class FleetRepository(
                         catatan = "",
                         files = mediaFiles,
                         spreadsheetId = targetSheetId,
-                        sheetId = "1531520840"
+                        sheetId = GID_ARSIP_PENGIRIMAN
                     ),
                     spreadsheetId = targetSheetId,
-                    sheetId = "1531520840"
+                    sheetId = GID_ARSIP_PENGIRIMAN
                 )
                 response
             } catch (e: Exception) {
@@ -295,7 +171,7 @@ class FleetRepository(
         if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.addPengiriman(
+                service.addPengiriman(
                     request = AddPengirimanApiRequest(
                         noSuratJalan = pengiriman.noSuratJalan,
                         tanggal = pengiriman.tanggal,
@@ -310,9 +186,6 @@ class FleetRepository(
                     ),
                     spreadsheetId = SPREADSHEET_PENGIRIMAN
                 )
-                if (response.success) {
-                    getPengirimanList()
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -325,7 +198,7 @@ class FleetRepository(
         if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.updatePengiriman(
+                service.updatePengiriman(
                     request = UpdatePengirimanApiRequest(
                         id = pengiriman.id,
                         noSuratJalan = pengiriman.noSuratJalan,
@@ -341,9 +214,6 @@ class FleetRepository(
                     ),
                     spreadsheetId = SPREADSHEET_PENGIRIMAN
                 )
-                if (response.success) {
-                    getPengirimanList()
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -356,13 +226,10 @@ class FleetRepository(
         if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.deletePengiriman(
+                service.deletePengiriman(
                     request = DeletePengirimanApiRequest(id = id),
                     spreadsheetId = SPREADSHEET_PENGIRIMAN
                 )
-                if (response.success) {
-                    getPengirimanList()
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -396,7 +263,7 @@ class FleetRepository(
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.getDrivers(spreadsheetId = SPREADSHEET_ARMADA, sheetId = "927635166")
+                val response = service.getDrivers(spreadsheetId = SPREADSHEET_ARMADA, sheetId = GID_DAFTAR_DRIVER)
                 if (response.success && response.drivers != null && response.drivers.isNotEmpty()) {
                     val entities = response.drivers.map {
                         DriverEntity(it.id, it.name, "1234") // default PIN for fetched drivers if not provided
@@ -456,10 +323,10 @@ class FleetRepository(
                         driverName = matchingDriver.namaDriver,
                         pin = pin,
                         spreadsheetId = SPREADSHEET_ARMADA,
-                        sheetId = "927635166"
+                        sheetId = GID_DAFTAR_DRIVER
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = "927635166"
+                    sheetId = GID_DAFTAR_DRIVER
                 )
 
                 if (response.success && response.driverName != null) {
@@ -531,7 +398,7 @@ class FleetRepository(
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.getArmada(spreadsheetId = SPREADSHEET_ARMADA, sheetId = SPREADSHEET_ARMADA)
+                val response = service.getArmada(spreadsheetId = SPREADSHEET_ARMADA, sheetId = GID_ARMADA)
                 if (response.success && response.armada != null && response.armada.isNotEmpty()) {
                     val existingLocal = db.armadaDao().getAllArmada().first().associateBy { it.armadaId }
                     val entities = response.armada.map {
@@ -572,7 +439,7 @@ class FleetRepository(
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.getLogs(spreadsheetId = SPREADSHEET_ARMADA, sheetId = SPREADSHEET_ARMADA)
+                val response = service.getLogs(spreadsheetId = SPREADSHEET_ARMADA, sheetId = GID_LOG_HARIAN)
                 if (response.success && response.logs != null) {
                     val entities = response.logs.map {
                         LogHarianEntity(
@@ -603,7 +470,7 @@ class FleetRepository(
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.getBanArmada(spreadsheetId = SPREADSHEET_ARMADA, sheetId = "28565900")
+                val response = service.getBanArmada(spreadsheetId = SPREADSHEET_ARMADA, sheetId = GID_BAN)
                 
                 if (response.success && response.banArmada != null) {
                     val fetchedEntities = mutableListOf<BanEntity>()
@@ -980,19 +847,19 @@ class FleetRepository(
                             kondisi = tanggalPasang,
                             tekanan = merk,
                             keterangan = status,
-                            sheetId = "563918420",
+                            sheetId = GID_AKI,
                             sheetName = "AKI ARMADA"
                         ),
                         spreadsheetId = SPREADSHEET_ARMADA,
-                        sheetId = "563918420",
+                        sheetId = GID_AKI,
                         sheetName = "AKI ARMADA"
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = "563918420"
+                    sheetId = GID_AKI
                 )
 
                 if (response.success) {
-                    UpdateBanResult.Success(response.message ?: "Berhasil memperbarui data Aki ke Google Sheets (GID 563918420).")
+                    UpdateBanResult.Success(response.message ?: "Berhasil memperbarui data Aki ke Google Sheets (GID ${GID_AKI}).")
                 } else {
                     UpdateBanResult.Success("Aki tersimpan lokal (Sheets notice: ${response.message})")
                 }
@@ -1020,10 +887,10 @@ class FleetRepository(
                         base64Photo = base64Photo,
                         photoMimeType = photoMimeType,
                         spreadsheetId = SPREADSHEET_ARMADA,
-                        sheetId = SPREADSHEET_ARMADA
+                        sheetId = GID_ARMADA
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = SPREADSHEET_ARMADA
+                    sheetId = GID_ARMADA
                 )
                 if (response.success) {
                     UpdateFotoArmadaResult.Success(response.linkFoto ?: "", response.message ?: "Berhasil.")
@@ -1076,10 +943,10 @@ class FleetRepository(
                     request = SubmitLogApiRequest(
                         logData = logData,
                         spreadsheetId = SPREADSHEET_ARMADA,
-                        sheetId = SPREADSHEET_ARMADA
+                        sheetId = GID_LOG_HARIAN
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = SPREADSHEET_ARMADA
+                    sheetId = GID_LOG_HARIAN
                 )
 
                 if (response.success) {
@@ -1229,7 +1096,7 @@ class FleetRepository(
                         catatan = catatan
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = SPREADSHEET_ARMADA
+                    sheetId = GID_CATATAN_DRIVER
                 )
             } catch (e: Exception) {
                 // Ignore transient network errors
@@ -1255,7 +1122,7 @@ class FleetRepository(
                         armadaId = armadaId
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = SPREADSHEET_ARMADA
+                    sheetId = GID_CATATAN_DRIVER
                 )
             } catch (e: Exception) {
                 // Ignore transient network errors
@@ -1283,7 +1150,7 @@ class FleetRepository(
                         catatan = catatan
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
-                    sheetId = SPREADSHEET_ARMADA
+                    sheetId = GID_ARMADA
                 )
 
                 if (response.success) {
@@ -1540,10 +1407,10 @@ class FleetRepository(
                         chatMessage = if (enrichedDbContext.isNotEmpty()) "$chatMessage\n\n[CONTEXT DATA: $enrichedDbContext]" else chatMessage,
                         apiKey = apiKey,
                         spreadsheetId = SPREADSHEET_AI_DATA,
-                        sheetId = SPREADSHEET_AI_DATA
+                        sheetId = GID_AI_DATA
                     ),
                     spreadsheetId = SPREADSHEET_AI_DATA,
-                    sheetId = SPREADSHEET_AI_DATA
+                    sheetId = GID_AI_DATA
                 )
 
                 if (response.success && !response.message.isNullOrEmpty()) {
@@ -1741,7 +1608,7 @@ ATURAN KETAT:
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.getPengajuan(sheetId = "1474380133")
+                val response = service.getPengajuan(sheetId = GID_PENGAJUAN)
                 if (response.success && response.data != null) {
                     val entities = response.data.map { item ->
                         PengajuanEntity(
@@ -1818,7 +1685,7 @@ ATURAN KETAT:
                         catatan = catatan,
                         files = files
                     ),
-                    sheetId = "1474380133"
+                    sheetId = GID_PENGAJUAN
                 )
                 if (response.success) {
                     SubmitPengajuanResult.Success(generatedNo, response.message ?: "Pengajuan berhasil disimpan ke Google Sheets!")

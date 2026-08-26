@@ -87,7 +87,7 @@ interface ApiService {
         @Body request: UpdateAkiApiRequest,
         @Query("action") action: String = "update_aki",
         @Query("spreadsheetId") spreadsheetId: String? = null,
-        @Query("sheetId") sheetId: String? = "563918420"
+        @Query("sheetId") sheetId: String? = "1886867333"
     ): UpdateBanApiResponse
 
     @POST("exec")
@@ -97,13 +97,6 @@ interface ApiService {
         @Query("spreadsheetId") spreadsheetId: String? = null,
         @Query("sheetId") sheetId: String? = null
     ): UpdateFotoArmadaApiResponse
-
-    @GET("exec")
-    suspend fun getPengiriman(
-        @Query("action") action: String = "getPengiriman",
-        @Query("spreadsheetId") spreadsheetId: String? = null,
-        @Query("sheetId") sheetId: String? = null
-    ): PengirimanApiResponse
 
     @POST("exec")
     suspend fun addPengiriman(
@@ -165,14 +158,14 @@ interface ApiService {
         @Body request: SubmitPengajuanApiRequest,
         @Query("action") action: String = "submitPengajuan",
         @Query("spreadsheetId") spreadsheetId: String? = null,
-        @Query("sheetId") sheetId: String? = "1474380133"
+        @Query("sheetId") sheetId: String? = "1517362778"
     ): CommonWriteApiResponse
 
     @GET("exec")
     suspend fun getPengajuan(
         @Query("action") action: String = "getPengajuan",
         @Query("spreadsheetId") spreadsheetId: String? = null,
-        @Query("sheetId") sheetId: String? = "1474380133"
+        @Query("sheetId") sheetId: String? = "1517362778"
     ): GetPengajuanApiResponse
 }
 
@@ -186,32 +179,6 @@ data class AiKnowledgeApiItem(
     val kategori: String,
     val pertanyaan: String,
     val jawaban: String
-)
-
-data class PengirimanApiResponse(
-    val success: Boolean,
-    val data: List<PengirimanApiItem>?
-)
-
-data class PengirimanApiItem(
-    val id: Int? = null,
-    val noDokumen: String? = null,
-    val noSuratJalan: String? = null,
-    val tanggal: String? = null,
-    val driver: String? = null,
-    val driver1: String? = null,
-    val driver2: String? = null,
-    val armada: String? = null,
-    val gudangAsal: String? = null,
-    val tujuan: String? = null,
-    val alamat: String? = null,
-    val remarks: String? = null,
-    val penerima: String? = null,
-    val noTelpCustomer: String? = null,
-    val jumlahKoli: Int? = 0,
-    val volumeCbm: Double? = 0.0,
-    val status: String? = null,
-    val catatan: String? = null
 )
 
 data class TerkirimMediaFile(
@@ -439,7 +406,7 @@ data class UpdateAkiApiRequest(
     val action: String = "update_aki",
     val akiData: UpdateAkiApiData,
     val spreadsheetId: String? = null,
-    val sheetId: String? = "563918420",
+    val sheetId: String? = "1886867333",
     val sheetName: String? = "AKI ARMADA"
 )
 
@@ -453,7 +420,7 @@ data class UpdateAkiApiData(
     val kondisi: String? = null,
     val tekanan: String? = null,
     val keterangan: String? = null,
-    val sheetId: String? = "563918420",
+    val sheetId: String? = "1886867333",
     val sheetName: String? = "AKI ARMADA"
 )
 
@@ -530,7 +497,7 @@ data class SubmitPengajuanApiRequest(
     val catatan: String,
     val files: List<MediaFileItem>,
     val spreadsheetId: String? = null,
-    val sheetId: String? = "1474380133"
+    val sheetId: String? = "1517362778"
 )
 
 data class PengajuanApiItem(

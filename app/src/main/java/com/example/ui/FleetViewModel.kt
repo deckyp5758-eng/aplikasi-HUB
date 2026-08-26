@@ -199,7 +199,6 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 _logs.value = repository.getLogsList()
                 _banList.value = repository.getBanArmadaList()
                 checkAkiAgeAndNotify(_banList.value)
-                _pengirimanList.value = repository.getPengirimanList()
                 _dataErrorMessage.value = null
             } catch (e: Exception) {
                 val err = "Gagal mengambil data dari Google Apps Script: ${e.localizedMessage ?: "Kesalahan koneksi"}"
@@ -588,11 +587,11 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
         val isPengirimanQuery = qRaw.contains("pengiriman") || qRaw.contains("bukti") || qRaw.contains("surat") || 
                                 qRaw.contains("sj") || qRaw.contains("dokumen") || qRaw.contains("jalan") || 
-                                qRaw.contains("arsip") || qRaw.contains("1531520840") || qRaw.contains("cust") || 
+                                qRaw.contains("arsip") || qRaw.contains("1878433267") || qRaw.contains("cust") ||
                                 qRaw.contains("customer") || qRaw.contains("penerima") || qRaw.contains("tujuan")
 
         val isOdometerQuery = qRaw.contains("odometer") || qRaw.contains("km") || qRaw.contains("log") || 
-                              qRaw.contains("harian") || qRaw.contains("pemeriksaan") || qRaw.contains("717944372") || 
+                              qRaw.contains("harian") || qRaw.contains("pemeriksaan") || qRaw.contains("1263706817") ||
                               qRaw.contains("odo")
 
         val isTruckQuery = qRaw.contains("truck") || qRaw.contains("truk") || qRaw.contains("armada") || qRaw.contains("unit")
@@ -627,7 +626,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // 2. Search Log Foto Odometer KM (GID 717944372)
+        // 2. Search Log Foto Odometer KM (GID 1263706817)
         val logsList = _logs.value
         logsList.forEach { log ->
             val isMatch = matchesField(log.tanggal) || 
@@ -654,7 +653,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // 3. Search Arsip Bukti Pengiriman (GID 1531520840)
+        // 3. Search Arsip Bukti Pengiriman (GID 1878433267)
         val pengirimanList = _pengirimanList.value
         pengirimanList.forEach { p ->
             val isMatch = matchesField(p.tanggal) || 
@@ -696,10 +695,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 results.add(
                     ChatMediaItem(
                         title = "📁 Folder Drive Foto & Video Pengiriman",
-                        description = "Arsip Bukti Pengiriman (Sheet GID: 1531520840 | Drive ID: 12NyXxBBU8MOcr6so-LCrRazCQifHeSv1)",
+                        description = "Arsip Bukti Pengiriman (Sheet GID: 1878433267 | Drive ID: 12NyXxBBU8MOcr6so-LCrRazCQifHeSv1)",
                         urlOrPath = "https://drive.google.com/drive/folders/12NyXxBBU8MOcr6so-LCrRazCQifHeSv1",
                         type = "FILE",
-                        source = "Google Drive (1531520840)"
+                        source = "Google Drive (1878433267)"
                     )
                 )
             }
@@ -708,10 +707,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 results.add(
                     ChatMediaItem(
                         title = "📁 Folder Drive Foto Odometer KM",
-                        description = "Data Log Odometer KM (Sheet GID: 717944372 | Drive ID: 1ZpPEGaVCz0qmu37r_Eq8H8701a3bOS76)",
+                        description = "Data Log Odometer KM (Sheet GID: 1263706817 | Drive ID: 1ZpPEGaVCz0qmu37r_Eq8H8701a3bOS76)",
                         urlOrPath = "https://drive.google.com/drive/folders/1ZpPEGaVCz0qmu37r_Eq8H8701a3bOS76",
                         type = "FILE",
-                        source = "Google Drive (717944372)"
+                        source = "Google Drive (1263706817)"
                     )
                 )
             }

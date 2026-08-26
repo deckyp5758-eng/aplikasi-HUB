@@ -7,12 +7,12 @@
 // KONFIGURASI & KONSTANTA
 // ============================================
 
-var DEFAULT_SPREADSHEET_ID = "1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4";
-var GID_SURAT_JALAN = 1531520840; // GID Arsip Bukti Pengiriman
-var GID_ODOMETER_KM = 717944372; // GID Log Foto Odometer KM
-var GID_KIR_PAJAK = 1397618269;
-var GID_AKI = 563918420; // GID Sheet Aki Armada HUB Kediri
-var GID_PENGAJUAN = 1474380133; // GID Sheet Pengajuan Aksesoris & Ban
+var DEFAULT_SPREADSHEET_ID = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw";
+var GID_SURAT_JALAN = 1878433267; // GID Arsip Bukti Pengiriman
+var GID_ODOMETER_KM = 1263706817; // GID Log Foto Odometer KM
+var GID_KIR_PAJAK = 2062052578;
+var GID_AKI = 1886867333; // GID Sheet Aki Armada HUB Kediri
+var GID_PENGAJUAN = 1517362778; // GID Sheet Pengajuan Aksesoris & Ban
 var FOLDER_ID_PENGIRIMAN = "12NyXxBBU8MOcr6so-LCrRazCQifHeSv1";
 var FOLDER_ID_KM = "1ZpPEGaVCz0qmu37r_Eq8H8701a3bOS76";
 var FOLDER_ID_PENGAJUAN = "1Kk9f5f8_o8puwA3ZNJAKa_9cVy5TN5Lh";
@@ -1063,7 +1063,7 @@ function updateAki(contents, ss, sheetMap) {
 
     return {
       success: true,
-      message: "Data AKI " + targetArmadaId + " berhasil disimpan ke Google Sheets (GID 563918420)!"
+      message: "Data AKI " + targetArmadaId + " berhasil disimpan ke Google Sheets (GID 1886867333)!"
     };
   } catch(e) {
     return { success: false, message: "Gagal memperbarui data aki: " + e.toString() };
@@ -1812,7 +1812,7 @@ function extractKmFromImage(base64Data) {
 }
 
 // ============================================
-// FITUR PENGAJUAN (BAN & AKSESORIS - GID 1474380133)
+// FITUR PENGAJUAN (BAN & AKSESORIS - GID 1517362778)
 // ============================================
 
 function submitPengajuan(contents, ss, sheetMap) {

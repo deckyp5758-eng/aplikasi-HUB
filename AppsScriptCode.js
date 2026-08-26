@@ -29,10 +29,10 @@
 
 // SPREADSHEETS CONFIGURATION (ID Database Spreadsheet Hub Kediri)
 const SPREADSHEETS = {
-  PENGIRIMAN: "1C3ueWkDAUnG7BA6zSX_osvNSsAjPSMuFI8u5J4XqMc0",
-  PENGIRIMAN_LOG: "1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4",
-  ARMADA: "1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4",
-  AI_DATA: "1_04rOtZLPKmOhOoj0-GVN0XOkO41x54FoHpdp5yu_74"
+  PENGIRIMAN: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw",
+  PENGIRIMAN_LOG: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw",
+  ARMADA: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw",
+  AI_DATA: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw"
 };
 const DRIVE_DELIVERY_FOLDER_ID = "12NyXxBBU8MOcr6so-LCrRazCQifHeSv1";
 
@@ -58,7 +58,7 @@ function doGet(e) {
   try {
     // -----------------------------------------------------------------
     // 1. ENDPOINT: GET /pengiriman
-    // Data bersumber dari Spreadsheet: 1C3ueWkDAUnG7BA6zSX_osvNSsAjPSMuFI8u5J4XqMc0
+    // Data bersumber dari Spreadsheet: 1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw
     // Mapping Kolom:
     // Kolom D (3): No Dokumen
     // Kolom E (4): Surat Jalan
@@ -468,7 +468,7 @@ function doPost(e) {
     // -----------------------------------------------------------------
     // POST /submitterkirim ATAU action=submitterkirim
     // Simpan foto/video ke Google Drive folder ID: 1EarofgXOvxNsKVGc5XeTfOkYYV6ceGwK
-    // Catat log ke Spreadsheet ID: 1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4
+    // Catat log ke Spreadsheet ID: 1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw
     // -----------------------------------------------------------------
     if (route === "submitterkirim" || route === "terkirimpengiriman" || route === "terkirim") {
       var deliveryDate = postData.tanggal || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd");
@@ -506,7 +506,7 @@ function doPost(e) {
 
       var fileLinksJoined = uploadedUrls.join("\n");
 
-      // Catat ke Spreadsheet Log Pengiriman: 1F9_XGHAwuU_s1vJaEHIWutozuulEJHmHiwh2zbOrUG4
+      // Catat ke Spreadsheet Log Pengiriman: 1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw
       var logSsId = SPREADSHEETS.PENGIRIMAN_LOG;
       var logSs = SpreadsheetApp.openById(logSsId);
       var logSheet = logSs.getSheetByName("Pengiriman_Log") || logSs.getSheetByName("LogPengiriman") || logSs.getSheetByName("Pengiriman");
@@ -536,7 +536,7 @@ function doPost(e) {
         postData.catatan || ""
       ]);
 
-      // Update status di Sheet Asal (1C3ueWkDAUnG7BA6zSX_osvNSsAjPSMuFI8u5J4XqMc0)
+      // Update status di Sheet Asal (1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw)
       try {
         var srcSsId = SPREADSHEETS.PENGIRIMAN;
         var srcSs = SpreadsheetApp.openById(srcSsId);
