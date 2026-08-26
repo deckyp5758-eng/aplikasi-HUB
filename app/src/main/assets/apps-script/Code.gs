@@ -8,11 +8,18 @@
 // ============================================
 
 var DEFAULT_SPREADSHEET_ID = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw";
-var GID_SURAT_JALAN = 1878433267; // GID Arsip Bukti Pengiriman
-var GID_ODOMETER_KM = 1263706817; // GID Log Foto Odometer KM
+var GID_ARMADA = 1850941825;
+var GID_AI_DATA = 888604592;
+var GID_PENGAJUAN = 1517362778;
+var GID_CATATAN_DRIVER = 1562754278;
+var GID_LOG_HARIAN = 1263706817;
+var GID_ODOMETER_KM = 1263706817;
+var GID_DAFTAR_DRIVER = 479314622;
 var GID_KIR_PAJAK = 2062052578;
-var GID_AKI = 1886867333; // GID Sheet Aki Armada HUB Kediri
-var GID_PENGAJUAN = 1517362778; // GID Sheet Pengajuan Aksesoris & Ban
+var GID_BAN = 817527065;
+var GID_AKI = 1886867333;
+var GID_ARSIP_PENGIRIMAN = 1878433267;
+var GID_SURAT_JALAN = 1878433267; // GID Arsip Bukti Pengiriman
 var FOLDER_ID_PENGIRIMAN = "12NyXxBBU8MOcr6so-LCrRazCQifHeSv1";
 var FOLDER_ID_KM = "1ZpPEGaVCz0qmu37r_Eq8H8701a3bOS76";
 var FOLDER_ID_PENGAJUAN = "1Kk9f5f8_o8puwA3ZNJAKa_9cVy5TN5Lh";
@@ -253,7 +260,9 @@ function doPost(e) {
 function getDrivers(ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
-  var sheet = getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
+  var sheet = getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
+              getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
+              getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
               getSheetByNameFromMap(ss, sheetMap, "DRIVERS") || 
               getSheetByNameFromMap(ss, sheetMap, "Driver");
   var drivers = [];
@@ -329,13 +338,18 @@ function getKirPajakMap(ss, sheetMap) {
 function getArmada(ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
-  var sheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+  var sheet = getSheetByGid(sheetMap, GID_ARMADA) || 
+              getSheetByGid(ss, GID_ARMADA) || 
+              getSheetByNameFromMap(ss, sheetMap, "ARMADA") || 
+              getSheetByNameFromMap(ss, sheetMap, "Armada");
   var kirMap = getKirPajakMap(ss, sheetMap);
   var armadaList = [];
 
   var fotoProfilMap = {};
   try {
-    var driverSheet = getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver");
+    var driverSheet = getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
+                      getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
+                      getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver");
     if (driverSheet) {
       var driverData = driverSheet.getDataRange().getValues();
       for (var d = 1; d < driverData.length; d++) {
@@ -390,7 +404,9 @@ function getLogs(ss, limit, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
   limit = limit || 100;
-  var sheet = getSheetByNameFromMap(ss, sheetMap, "log_harian") || 
+  var sheet = getSheetByGid(sheetMap, GID_LOG_HARIAN) || 
+              getSheetByGid(ss, GID_LOG_HARIAN) || 
+              getSheetByNameFromMap(ss, sheetMap, "log_harian") || 
               getSheetByNameFromMap(ss, sheetMap, "LOG_HARIAN") || 
               getSheetByGid(sheetMap, GID_SURAT_JALAN);
   var logsList = [];
@@ -422,7 +438,9 @@ function getLogs(ss, limit, sheetMap) {
 function getBanArmada(ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
-  var banSheet = getSheetByNameFromMap(ss, sheetMap, "BAN ARMADA") || 
+  var banSheet = getSheetByGid(sheetMap, GID_BAN) || 
+                 getSheetByGid(ss, GID_BAN) || 
+                 getSheetByNameFromMap(ss, sheetMap, "BAN ARMADA") || 
                  getSheetByNameFromMap(ss, sheetMap, "Ban armada") || 
                  getSheetByNameFromMap(ss, sheetMap, "Ban Armada") || 
                  getSheetByNameFromMap(ss, sheetMap, "BAN");
@@ -690,7 +708,9 @@ function validateLogin(contents, ss, sheetMap) {
   }
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
-  var sheet = getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
+  var sheet = getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
+              getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
+              getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
               getSheetByNameFromMap(ss, sheetMap, "DRIVERS") || 
               getSheetByNameFromMap(ss, sheetMap, "Driver");
   if (sheet) {
