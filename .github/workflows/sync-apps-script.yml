@@ -85,8 +85,13 @@ jobs:
             exit 1
           fi
 
-          cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Code.gs" "$sync_dir/Code.gs"
-          test -s "$sync_dir/Code.gs"
+          # clasp pull maps the Apps Script SERVER_JS file to Code.js.
+          # Keep exactly one server source file locally; feeding both Code.gs
+          # and Code.js causes clasp to abort with "Conflicting files found".
+          rm -f "$sync_dir/Code.gs"
+          cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Code.gs" "$sync_dir/Code.js"
+          test -s "$sync_dir/Code.js"
+          test ! -e "$sync_dir/Code.gs"
 
       - name: Push source to Apps Script
         shell: bash
