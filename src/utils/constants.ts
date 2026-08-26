@@ -1,4 +1,4 @@
-export const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxt5PDpBtv9vwtzj6Md273D61IU1Z2eYvdcGPGWZ6lG2KJxArcZIhz9Q3H-3l007VI/exec";
+export const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ/exec";
 
 export const AUTO_REFRESH_INTERVAL_MS = 60000; // 60 Detik
 
