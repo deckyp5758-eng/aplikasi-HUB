@@ -1,0 +1,139 @@
+name: Sync H033 Apps Script
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - app/src/main/assets/apps-script/Code.gs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h033-apps-script-production
+  cancel-in-progress: false
+
+env:
+  # These identifiers are not credentials. The credential itself is read only
+  # from the CLASP_CREDENTIALS_JSON repository secret below.
+  APPS_SCRIPT_PROJECT_ID: 1sc4hIEKppa5pyTbes5i-BXrE4LaklUix9CJxEzCtl7jN8GcutUC_YFLM
+  APPS_SCRIPT_DEPLOYMENT_ID: AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ
+  APPS_SCRIPT_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ/exec
+
+jobs:
+  deploy:
+    name: Update Apps Script and redeploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLASP_CREDENTIALS_JSON: ${{ secrets.CLASP_CREDENTIALS_JSON }}
+
+    steps:
+      - name: Checkout canonical source
+        uses: actions/checkout@v4
+
+      - name: Validate required secret and protected scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLASP_CREDENTIALS_JSON" || {
+            echo "Missing repository secret CLASP_CREDENTIALS_JSON."
+            exit 1
+          }
+          canonical="$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Code.gs"
+          test -s "$canonical"
+          if grep -qE '563918420|1474380133' "$canonical"; then
+            echo "Refusing to deploy: canonical Code.gs contains an obsolete GID."
+            exit 1
+          fi
+          if grep -qE '(^|/|\\)BBM\\.gs$' <(find "$GITHUB_WORKSPACE" -type f -print); then
+            echo "Protected BBM.gs must not be included in this sync job."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pinned clasp
+        shell: bash
+        run: npm install --global @google/clasp@3.4.0
+
+      - name: Pull current Apps Script project and replace only Code.gs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sync_dir="$(mktemp -d)"
+          echo "SYNC_DIR=$sync_dir" >> "$GITHUB_ENV"
+          # clasp reads authentication from the runner user's global file.
+          printf '%s' "$CLASP_CREDENTIALS_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          printf '{"scriptId":"%s","rootDir":"%s"}\n' \
+            "$APPS_SCRIPT_PROJECT_ID" "$sync_dir" > "$sync_dir/.clasp.json"
+          chmod 600 "$sync_dir/.clasp.json"
+
+          cd "$sync_dir"
+          clasp pull
+
+          # Refuse the job if the remote project contains the separately-owned
+          # BBM.gs asset. This prevents an accidental cross-project overwrite.
+          if find "$sync_dir" -type f -name 'BBM.gs' -print -quit | grep -q .; then
+            echo "Refusing to sync: BBM.gs exists in the target project."
+            exit 1
+          fi
+
+          cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Code.gs" "$sync_dir/Code.gs"
+          test -s "$sync_dir/Code.gs"
+
+      - name: Push source to Apps Script
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SYNC_DIR"
+          clasp push --force
+
+      - name: Create a new immutable version
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SYNC_DIR"
+          description="GitHub ${GITHUB_SHA:0:7}"
+          clasp version "$description" | tee "$RUNNER_TEMP/clasp-version.log"
+          version="$(sed -nE 's/.*Created version ([0-9]+).*/\1/p' "$RUNNER_TEMP/clasp-version.log" | tail -n 1)"
+          test -n "$version" || {
+            echo "Could not determine the newly created Apps Script version."
+            exit 1
+          }
+          echo "APPS_SCRIPT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Redeploy the existing Web App deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SYNC_DIR"
+          clasp redeploy "$APPS_SCRIPT_DEPLOYMENT_ID" "$APPS_SCRIPT_VERSION" "GitHub ${GITHUB_SHA:0:7}"
+
+      - name: Verify the same Web App URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/h033-debug.json"
+          status="$(curl --fail-with-body -sS -L \
+            -o "$response_file" -w '%{http_code}' \
+            "${APPS_SCRIPT_WEB_APP_URL}?action=debug")"
+          test "$status" = "200" || {
+            echo "Web App verification returned HTTP $status."
+            exit 1
+          }
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+          if payload.get("success") is not True:
+              raise SystemExit("Apps Script debug verification did not report success")
+          print("Apps Script deployment verification: success")
+          PY
