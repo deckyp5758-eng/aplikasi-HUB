@@ -237,11 +237,6 @@ class FleetRepository(
     }
 
 
-    private suspend fun purgeUnauthorizedDrivers() {
-        db.driverDao().deleteDriverById("Wahyu")
-        db.driverDao().deleteDriverById("D03")
-    }
-
     private suspend fun getDriverDefaults(): List<DriverEntity> {
         val list = db.driverDao().getAllDrivers().first()
         return if (list.isEmpty()) {
@@ -250,7 +245,6 @@ class FleetRepository(
                 DriverEntity("D02", "Driver HUB 2", "5678")
             )
             db.driverDao().insertDrivers(defaults)
-            purgeUnauthorizedDrivers()
             defaults
         } else {
             list
@@ -258,7 +252,6 @@ class FleetRepository(
     }
 
     suspend fun getDrivers(): List<DriverEntity> {
-        purgeUnauthorizedDrivers()
 
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
@@ -270,9 +263,6 @@ class FleetRepository(
                     }
                     db.driverDao().deleteAllDrivers() // Hapus total cache driver lama agar bersih dari data random sebelumnya
                     db.driverDao().insertDrivers(entities)
-                    
-                    purgeUnauthorizedDrivers()
-                    
                     db.driverDao().getAllDrivers().first()
                 } else {
                     db.driverDao().getAllDrivers().first()
@@ -287,7 +277,6 @@ class FleetRepository(
     }
 
     suspend fun validateLogin(driverIdOrName: String, pin: String): LoginResult {
-        purgeUnauthorizedDrivers()
 
         // 1. Ambil daftar semua pengemudi terdaftar dari database lokal
         var allDrivers = db.driverDao().getAllDrivers().first()
