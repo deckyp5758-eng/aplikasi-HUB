@@ -129,6 +129,8 @@ function doGet(e) {
       return jsonResponse({ success: true, data: getPengiriman(ss, sheetMap) });
     } else if (action === "getAiKnowledge") {
       return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
+    } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
+      return jsonResponse(setupAllSheets(ss));
     } else if (action === "debug" || action === "debugSheets") {
       var sheetsInfo = [];
       var allSheets = sheetMap.sheets || ss.getSheets();
@@ -220,6 +222,8 @@ function doPost(e) {
       return jsonResponse(clearCatatanDriver(contents, ss, sheetMap));
     } else if (action === "submitPengajuan" || action === "submit_pengajuan") {
       return jsonResponse(submitPengajuan(contents, ss, sheetMap));
+    } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
+      return jsonResponse(setupAllSheets(ss));
     } else if (action === "performOcr" || action === "ocr" || action === "extractKmFromImage") {
       var b64Ocr = contents.base64Data || contents.base64Photo || contents.base64 || contents.image || "";
       return jsonResponse(extractKmFromImage(b64Ocr));
@@ -2127,4 +2131,245 @@ function handleAsistenAi(contents) {
     return { success: false, message: "Gagal memproses Asisten AI: " + err.toString() };
   }
 }
+
+// ============================================
+// STRUCTURAL SETUP & SHEET FORMATTING (setupAllSheets)
+// ============================================
+
+/**
+ * Master Setup: Merapikan & Membangun SELURUH Sheet Aplikasi sekaligus!
+ * Versi Batch Super Cepat & Bebas Error.
+ */
+function setupAllSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  
+  try {
+    setupSheetArmada(ss);
+    setupSheetPengiriman(ss);
+    setupSheetLogKM(ss);
+    setupSheetDriver(ss);
+    setupSheetBan(ss);
+    setupSheetAki(ss);
+    setupSheetSparepart(ss);
+    
+    try {
+      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart) telah berhasil dirapikan secara instan!");
+    } catch(uiErr) {
+      Logger.log("Setup All Sheets Completed!");
+    }
+    
+    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart) telah berhasil dirapikan secara instan!" };
+  } catch(e) {
+    return { success: false, message: "Gagal memproses setupAllSheets: " + e.toString() };
+  }
+}
+
+// -------------------------------------------------------------
+// 1. SHEET ARMADA
+// -------------------------------------------------------------
+function setupSheetArmada(ss) {
+  var sheet = ss.getSheetByName("Armada") || ss.insertSheet("Armada");
+  var headers = [["Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "KM Service Berikutnya", "Sisa KM", "Status", "Flag", "Foto KM", "Catatan", "Pajak Tahunan", "KIR Date", "Pajak 5 Tahunan", "Foto Truck"]];
+  
+  applyHeaderStyle(sheet, headers, "#0A2540");
+  
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+
+  sheet.getRange(2, 3, numRows, 5).setNumberFormat("#,##0");
+  sheet.getRange(2, 12, numRows, 3).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 1, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 8, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 12, numRows, 3).setHorizontalAlignment("center");
+
+  // Batch Formula (Diisi Sekaligus Tanpa Loop Lambat)
+  var formulas = [];
+  for (var r = 2; r <= maxRows; r++) {
+    formulas.push([
+      '=IF(D' + r + '="","", D' + r + ' + E' + r + ')',
+      '=IF(F' + r + '="","", F' + r + ' - C' + r + ')',
+      '=IF(G' + r + '="","",' +
+        'IF(G' + r + '<=0, "SERVIS SEKARANG",' +
+        'IF(G' + r + '<=1000, "⚠️ SERVICE <1000 KM", "AMAN")))'
+    ]);
+  }
+  sheet.getRange(2, 6, numRows, 3).setFormulas(formulas);
+
+  // Conditional Formatting
+  var statusRange = sheet.getRange(2, 8, numRows, 1);
+  var ruleRed = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("SERVIS SEKARANG").setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true).setRanges([statusRange]).build();
+  var ruleYellow = SpreadsheetApp.newConditionalFormatRule().whenTextContains("⚠️ SERVICE <1000 KM").setBackground("#FEF3C7").setFontColor("#92400E").setBold(true).setRanges([statusRange]).build();
+  var ruleGreen = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("AMAN").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleRed, ruleYellow, ruleGreen]);
+  
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 2. SHEET PENGIRIMAN
+// -------------------------------------------------------------
+function setupSheetPengiriman(ss) {
+  var sheet = ss.getSheetByName("Pengiriman") || ss.getSheetByName("SuratJalan") || ss.insertSheet("Pengiriman");
+  var headers = [["No Dokumen", "No Surat Jalan", "Tanggal", "Driver", "Armada", "Gudang Asal", "Tujuan", "Alamat", "Penerima", "No Telp Customer", "Jumlah Koli", "Volume CBM", "Status", "Catatan"]];
+  
+  applyHeaderStyle(sheet, headers, "#1E3A8A");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 3, numRows, 1).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 11, numRows, 1).setNumberFormat("#,##0");
+  sheet.getRange(2, 12, numRows, 1).setNumberFormat("0.00");
+  sheet.getRange(2, 1, numRows, 5).setHorizontalAlignment("center");
+  sheet.getRange(2, 13, numRows, 1).setHorizontalAlignment("center");
+
+  var statusRange = sheet.getRange(2, 13, numRows, 1);
+  var ruleTerkirim = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("TERKIRIM").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  var ruleJalan = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Dalam Perjalanan").setBackground("#E0F2FE").setFontColor("#075985").setBold(true).setRanges([statusRange]).build();
+  var rulePending = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Belum Berangkat").setBackground("#F1F5F9").setFontColor("#475569").setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleTerkirim, ruleJalan, rulePending]);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 3. SHEET LOG KM
+// -------------------------------------------------------------
+function setupSheetLogKM(ss) {
+  var sheet = ss.getSheetByName("LogKM") || ss.insertSheet("LogKM");
+  var headers = [["Timestamp", "Armada ID", "Driver", "KM Odometer", "Foto KM", "Status", "Catatan"]];
+  
+  applyHeaderStyle(sheet, headers, "#0D9488");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 1, numRows, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+  sheet.getRange(2, 4, numRows, 1).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 3).setHorizontalAlignment("center");
+  sheet.getRange(2, 6, numRows, 1).setHorizontalAlignment("center");
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 4. SHEET DRIVER
+// -------------------------------------------------------------
+function setupSheetDriver(ss) {
+  var sheet = ss.getSheetByName("Driver") || ss.insertSheet("Driver");
+  var headers = [["Driver ID", "Nama Driver", "No HP", "Status", "Foto Profile"]];
+  
+  applyHeaderStyle(sheet, headers, "#312E81");
+  var maxRows = Math.max(sheet.getLastRow(), 30);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 1, numRows, 1).setHorizontalAlignment("center");
+  sheet.getRange(2, 3, numRows, 2).setHorizontalAlignment("center");
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 5. SHEET BAN
+// -------------------------------------------------------------
+function setupSheetBan(ss) {
+  var sheet = ss.getSheetByName("Ban") || ss.insertSheet("Ban");
+  var headers = [["Armada ID", "Position", "Brand", "Serial Number", "Tread Depth (mm)", "Status", "Last Inspection Date"]];
+  
+  applyHeaderStyle(sheet, headers, "#7C2D12");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 5, numRows, 1).setNumberFormat("0.0");
+  sheet.getRange(2, 7, numRows, 1).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 1, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 6, numRows, 2).setHorizontalAlignment("center");
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 6. SHEET AKI
+// -------------------------------------------------------------
+function setupSheetAki(ss) {
+  var sheet = ss.getSheetByName("Aki") || ss.insertSheet("Aki");
+  var headers = [["Armada ID", "No Polisi", "Brand", "Serial Number", "Tanggal Pemasangan", "Usia Aki (Hari)", "Status"]];
+  
+  applyHeaderStyle(sheet, headers, "#991B1B");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 5, numRows, 1).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 6, numRows, 1).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 5, numRows, 3).setHorizontalAlignment("center");
+
+  // Batch Formula Aki
+  var formulas = [];
+  for (var r = 2; r <= maxRows; r++) {
+    formulas.push([
+      '=IF(E' + r + '="","", INT(TODAY() - E' + r + '))',
+      '=IF(F' + r + '="","",' +
+        'IF(F' + r + '>=730, "🚨 GANTI AKI (>2 THN)",' +
+        'IF(F' + r + '>=660, "⚠️ CEK AKI (<2 BLN)", "NORMAL")))'
+    ]);
+  }
+  sheet.getRange(2, 6, numRows, 2).setFormulas(formulas);
+
+  var statusRange = sheet.getRange(2, 7, numRows, 1);
+  var ruleRed = SpreadsheetApp.newConditionalFormatRule().whenTextContains("GANTI AKI").setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true).setRanges([statusRange]).build();
+  var ruleYellow = SpreadsheetApp.newConditionalFormatRule().whenTextContains("CEK AKI").setBackground("#FEF3C7").setFontColor("#92400E").setBold(true).setRanges([statusRange]).build();
+  var ruleGreen = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("NORMAL").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleRed, ruleYellow, ruleGreen]);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 7. SHEET SPAREPART
+// -------------------------------------------------------------
+function setupSheetSparepart(ss) {
+  var sheet = ss.getSheetByName("Sparepart") || ss.insertSheet("Sparepart");
+  var headers = [["Item ID", "Nama Item", "Kategori", "Stok", "Batas Minimum", "Unit", "Status"]];
+  
+  applyHeaderStyle(sheet, headers, "#065F46");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 4, numRows, 2).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 1).setHorizontalAlignment("center");
+  sheet.getRange(2, 6, numRows, 2).setHorizontalAlignment("center");
+
+  // Batch Formula Sparepart
+  var formulas = [];
+  for (var r = 2; r <= maxRows; r++) {
+    formulas.push([
+      '=IF(D' + r + '="","",' +
+        'IF(D' + r + '<=E' + r + ', "⚠️ STOK MENIPIS/HABIS", "TERSEDIA"))'
+    ]);
+  }
+  sheet.getRange(2, 7, numRows, 1).setFormulas(formulas);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// UTILITY FUNCTIONS FOR SETUP
+// -------------------------------------------------------------
+function applyHeaderStyle(sheet, headers, bgColor) {
+  sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+  var headerRange = sheet.getRange(1, 1, 1, headers[0].length);
+  headerRange
+    .setBackground(bgColor)
+    .setFontColor("#FFFFFF")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 40);
+  sheet.setFrozenRows(1);
+}
+
+function applyGridAndResize(sheet, colCount, maxRows) {
+  var dataRange = sheet.getRange(1, 1, maxRows, colCount);
+  dataRange.setBorder(true, true, true, true, true, true, "#CBD5E1", SpreadsheetApp.BorderStyle.SOLID);
+}
+
 
