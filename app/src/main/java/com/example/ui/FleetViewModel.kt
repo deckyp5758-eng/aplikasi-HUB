@@ -5,9 +5,11 @@ import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.utils.ApkUpdateManager
 import com.example.utils.ImageCompressor
 import com.example.utils.InputSanitizer
 import com.example.utils.NotificationHelper
+import com.example.utils.UpdateUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +42,27 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _themeMode = MutableStateFlow(prefs.themeMode)
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+
+    // In-App Direct APK Updater
+    private val apkUpdateManager = ApkUpdateManager(
+        application,
+        RetrofitClient.getApiService(prefs.appsScriptUrl)
+    )
+    val updateState: StateFlow<UpdateUiState> = apkUpdateManager.updateState
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            apkUpdateManager.checkForUpdates()
+        }
+    }
+
+    fun downloadAndInstallApk(url: String) {
+        apkUpdateManager.downloadAndInstallApk(url)
+    }
+
+    fun dismissUpdateDialog() {
+        apkUpdateManager.dismissUpdate()
+    }
 
     // Synchronization Check States
     private val _syncChecking = MutableStateFlow(false)
@@ -172,6 +195,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
         // Initial fetch
         refreshMetadata()
+        checkForUpdates()
 
         // Auto Refresh Timer every 60 seconds
         viewModelScope.launch {

@@ -167,6 +167,11 @@ interface ApiService {
         @Query("spreadsheetId") spreadsheetId: String? = null,
         @Query("sheetId") sheetId: String? = "1517362778"
     ): GetPengajuanApiResponse
+
+    @GET("exec")
+    suspend fun checkUpdate(
+        @Query("action") action: String = "checkUpdate"
+    ): AppUpdateResponse
 }
 
 data class AiKnowledgeApiResponse(
@@ -521,6 +526,15 @@ data class PengajuanApiItem(
 data class GetPengajuanApiResponse(
     val success: Boolean,
     val data: List<PengajuanApiItem>?
+)
+
+data class AppUpdateResponse(
+    val success: Boolean,
+    val latestVersionCode: Int? = null,
+    val latestVersionName: String? = null,
+    val apkDownloadUrl: String? = null,
+    val forceUpdate: Boolean? = false,
+    val changelog: String? = null
 )
 
 

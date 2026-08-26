@@ -1,6 +1,7 @@
 package com.example.ui
 
 import com.example.data.*
+import com.example.ui.components.InAppUpdateDialog
 import com.example.ui.screens.*
 import com.example.utils.ImageCompressor
 import android.content.Intent
@@ -154,6 +155,7 @@ fun AppContent(viewModel: FleetViewModel) {
     var showSplash by remember { mutableStateOf(true) }
     val loggedInDriver by viewModel.loggedInDriverName.collectAsStateWithLifecycle()
     val isSheetsMode by viewModel.isGoogleSheetsMode.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -166,6 +168,17 @@ fun AppContent(viewModel: FleetViewModel) {
             } else {
                 MainAppScaffold(viewModel = viewModel, driverName = loggedInDriver)
             }
+
+            // In-App Direct APK Updater Dialog
+            InAppUpdateDialog(
+                updateState = updateState,
+                onUpdateClick = { apkUrl ->
+                    viewModel.downloadAndInstallApk(apkUrl)
+                },
+                onDismiss = {
+                    viewModel.dismissUpdateDialog()
+                }
+            )
 
             // Cinematic Splash Screen Overlay with Smooth Fade-Out
             androidx.compose.animation.AnimatedVisibility(

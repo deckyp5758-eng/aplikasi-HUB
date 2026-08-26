@@ -129,6 +129,15 @@ function doGet(e) {
       return jsonResponse({ success: true, data: getPengiriman(ss, sheetMap) });
     } else if (action === "getAiKnowledge") {
       return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
+    } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
+      return jsonResponse({
+        success: true,
+        latestVersionCode: 1,
+        latestVersionName: "1.0.0",
+        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/latest/download/app-release.apk",
+        forceUpdate: true,
+        changelog: "Pembaruan sistem validasi login driver dan peningkatan stabilitas aplikasi."
+      });
     } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
       return jsonResponse(setupAllSheets(ss));
     } else if (action === "debug" || action === "debugSheets") {
