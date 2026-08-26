@@ -1218,8 +1218,7 @@ class FleetRepository(
                 val isKeyError = !response.success && (
                     message.contains("API Key", ignoreCase = true) ||
                     message.contains("placeholder", ignoreCase = true) ||
-                    message.contains("belum dikonfigurasi", ignoreCase = true) ||
-                    message.contains("AQ.Ab8RN6K81CIkkQg0RSZ0IZ5j9rLA7Ecxv8QLam6dUgfm8jC1nw")
+                    message.contains("belum dikonfigurasi", ignoreCase = true)
                 )
 
                 if (response.success && response.km != null) {

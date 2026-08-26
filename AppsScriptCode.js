@@ -795,7 +795,7 @@ function doPost(e) {
  * ============================================
  */
 
-var GEMINI_API_KEY = "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ";
+var GEMINI_API_KEY = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") || "";
 
 /**
  * Fungsi utama untuk memanggil Gemini API dengan konteks data armada
@@ -803,7 +803,7 @@ var GEMINI_API_KEY = "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ";
 function callGeminiWithContext(chatMessage, spreadsheetId, passedApiKey) {
   var apiKey = passedApiKey || GEMINI_API_KEY;
   
-  if (!apiKey || apiKey === "" || apiKey === "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ") {
+  if (!apiKey || apiKey === "" || apiKey === "MY_GEMINI_API_KEY") {
     return { 
       success: false, 
       message: "API Key Gemini belum dikonfigurasi. Silakan isi API Key di Pengaturan aplikasi." 
