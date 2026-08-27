@@ -345,20 +345,9 @@ function getArmada(ss, sheetMap) {
   var kirMap = getKirPajakMap(ss, sheetMap);
   var armadaList = [];
 
-  var fotoProfilMap = {};
-  try {
-    var driverSheet = getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
-                      getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
-                      getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver");
-    if (driverSheet) {
-      var driverData = driverSheet.getDataRange().getValues();
-      for (var d = 1; d < driverData.length; d++) {
-        var armId = driverData[d][4] ? String(driverData[d][4]).trim().toUpperCase() : "";
-        var fotoUrl = driverData[d][6] ? String(driverData[d][6]).trim() : "";
-        if (armId && fotoUrl) fotoProfilMap[armId] = fotoUrl;
-      }
-    }
-  } catch(e) {}
+  // Foto profil armada disimpan langsung pada kolom L (index 11).
+  // Kolom ini dipisahkan dari FOTO KM pada kolom J.
+  var fotoProfileCol = 11;
 
   if (sheet) {
     var data = sheet.getDataRange().getValues();
@@ -367,7 +356,9 @@ function getArmada(ss, sheetMap) {
         var id = String(data[i][0]).trim().toUpperCase();
         var nopol = data[i][1] ? String(data[i][1]).trim().toUpperCase() : "";
         var extra = kirMap[id] || kirMap[nopol] || {};
-        var profileFoto = fotoProfilMap[id] || "";
+        var profileFoto = (data[i][fotoProfileCol] !== undefined && data[i][fotoProfileCol] !== null)
+          ? String(data[i][fotoProfileCol] || "").trim()
+          : "";
         var noteVal = String(data[i][10] || data[i][9] || "");
 
         var kmSaatIni = Number(data[i][2]) || 0;
@@ -1182,41 +1173,56 @@ function updateFotoArmada(contents, ss, sheetMap) {
   var armadaId = String(contents.armadaId || "").trim().toUpperCase();
   var base64Photo = contents.base64Photo || contents.fotoBase64 || "";
   var photoMimeType = contents.photoMimeType || "image/jpeg";
+  var fotoProfileCol = 12; // Kolom L pada sheet Armada.
 
   if (!armadaId) return { success: false, message: "Armada ID wajib diisi." };
+  if (!base64Photo) return { success: false, message: "Tidak ada data foto yang dikirim." };
 
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
 
   try {
-    var sheet = getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || getSheetByNameFromMap(ss, sheetMap, "DRIVERS");
-    if (!sheet) return { success: false, message: "Sheet 'Daftar_Driver' tidak ditemukan." };
+    var sheet = getSheetByGid(sheetMap, GID_ARMADA) ||
+                getSheetByGid(ss, GID_ARMADA) ||
+                getSheetByNameFromMap(ss, sheetMap, "ARMADA") ||
+                getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (!sheet) return { success: false, message: "Sheet 'Armada' tidak ditemukan." };
 
-    var linkFoto = "";
-    if (base64Photo) {
-      linkFoto = saveImageToDrive(base64Photo, "PROFILE_ARMADA_" + armadaId + ".jpg", "foto profil armada", photoMimeType);
+    if (sheet.getMaxColumns() < fotoProfileCol) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), fotoProfileCol - sheet.getMaxColumns());
+    }
+    var headerCell = sheet.getRange(1, fotoProfileCol).getValue();
+    if (!headerCell || String(headerCell).trim() === "") {
+      sheet.getRange(1, fotoProfileCol).setValue("FOTO PROFIL ARMADA");
     }
 
-    if (linkFoto) {
-      var data = sheet.getDataRange().getValues();
-      var updatedCount = 0;
-      for (var i = 1; i < data.length; i++) {
-        var cellVal = data[i][4] ? String(data[i][4]).trim().toUpperCase() : "";
-        if (cellVal === armadaId) {
-          var targetRow = data[i];
-          while (targetRow.length < 7) { targetRow.push(""); }
-          targetRow[6] = linkFoto; // Column G (index 6): Foto Profil Armada
-          batchWriteRow(sheet, i + 1, 1, targetRow);
-          updatedCount++;
-        }
+    var linkFoto = saveImageToDrive(
+      base64Photo,
+      "PROFILE_ARMADA_" + armadaId + ".jpg",
+      "foto profil armada",
+      photoMimeType
+    );
+    if (!linkFoto) return { success: false, message: "Foto gagal disimpan ke Google Drive." };
+
+    var data = sheet.getDataRange().getValues();
+    var updatedCount = 0;
+    for (var i = 1; i < data.length; i++) {
+      var cellVal = data[i][0] ? String(data[i][0]).trim().toUpperCase() : "";
+      if (cellVal === armadaId) {
+        sheet.getRange(i + 1, fotoProfileCol).setValue(linkFoto);
+        updatedCount++;
       }
-      return {
-        success: true,
-        linkFoto: linkFoto,
-        message: "Foto profil armada " + armadaId + " berhasil diperbarui (" + updatedCount + " baris)."
-      };
     }
-    return { success: false, message: "Tidak ada data foto yang dikirim." };
+
+    if (updatedCount === 0) {
+      return { success: false, message: "Armada ID " + armadaId + " tidak ditemukan pada sheet Armada." };
+    }
+
+    return {
+      success: true,
+      linkFoto: linkFoto,
+      message: "Foto profil armada " + armadaId + " berhasil disimpan pada kolom FOTO PROFIL ARMADA."
+    };
   } catch(err) {
     return { success: false, message: "Gagal update foto profil: " + err.toString() };
   }
