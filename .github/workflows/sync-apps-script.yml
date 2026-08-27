@@ -128,9 +128,12 @@ jobs:
             --versionNumber "$APPS_SCRIPT_VERSION" \
             --description "$description"
 
-          # Verify both the target version and the invariant deployment set.
-          clasp deployments --json > "$RUNNER_TEMP/deployments-after.json"
-          python3 - "$RUNNER_TEMP/deployments-before.json" "$RUNNER_TEMP/deployments-after.json" "$APPS_SCRIPT_DEPLOYMENT_ID" "$APPS_SCRIPT_VERSION" <<'PY'
+          # Apps Script may report the old version briefly after an update.
+          # Retry the read, but fail immediately if the deployment set changes.
+          verified=0
+          for attempt in $(seq 1 12); do
+            clasp deployments --json > "$RUNNER_TEMP/deployments-after.json"
+            if python3 - "$RUNNER_TEMP/deployments-before.json" "$RUNNER_TEMP/deployments-after.json" "$APPS_SCRIPT_DEPLOYMENT_ID" "$APPS_SCRIPT_VERSION" <<'PY'
           import json
           import sys
 
@@ -143,26 +146,43 @@ jobs:
           before_ids = sorted(item.get("deploymentId", "") for item in before)
           after_ids = sorted(item.get("deploymentId", "") for item in after)
           if before_ids != after_ids:
-              raise SystemExit(
-                  "Deployment set changed during update; refusing to continue."
-              )
+              print("Deployment set changed during update; refusing to continue.")
+              raise SystemExit(2)
 
           for deployment in after:
               if deployment.get("deploymentId") == expected_deployment:
                   actual_version = str(deployment.get("versionNumber", ""))
-                  if actual_version != expected_version:
-                      raise SystemExit(
-                          f"Canonical deployment points to version {actual_version}, "
-                          f"expected {expected_version}."
+                  if actual_version == expected_version:
+                      print(
+                          "Canonical deployment updated without creating a deployment; "
+                          "version " + actual_version
                       )
+                      break
                   print(
-                      "Canonical deployment updated without creating a deployment; "
-                      "version " + actual_version
+                      f"Deployment still reports version {actual_version}; "
+                      f"waiting for version {expected_version}."
                   )
-                  break
+                  raise SystemExit(1)
           else:
-              raise SystemExit("Canonical Apps Script deployment ID was not found.")
+              print("Canonical Apps Script deployment ID was not found.")
+              raise SystemExit(2)
           PY
+            then
+              verified=1
+              break
+            else
+              result=$?
+              if [ "$result" -eq 2 ]; then
+                exit 1
+              fi
+              echo "Waiting for Apps Script deployment consistency (attempt $attempt/12)."
+              sleep 5
+            fi
+          done
+          test "$verified" -eq 1 || {
+            echo "Canonical deployment did not expose the new version within 60 seconds."
+            exit 1
+          }
 
       - name: Verify the same Web App URL
         shell: bash
