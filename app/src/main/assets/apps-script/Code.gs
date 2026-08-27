@@ -439,54 +439,107 @@ function getBanArmada(ss, sheetMap) {
   if (banSheet) {
     var data = banSheet.getDataRange().getValues();
     if (data.length > 1) {
-      var colArmada = 0, colNopol = 1, colPosisi = 2, colBarcode = 3, colUkuran = 4, colNoSeri = 5, colMerk = 5, colKondisi = 6, colTekanan = 7, colKeterangan = 8, colTahun = 10, colCode = 3;
+      var colArmada = -1, colNopol = -1, colPosisi = -1, colTahun = -1, colCode = -1, colTanggal = -1, colNoSeri = -1, colBarcode = -1;
+      var colUkuran = -1, colMerk = -1, colKondisi = -1, colTekanan = -1, colKeterangan = -1;
       var header = data[0];
       if (header && header.length > 0) {
         for (var c = 0; c < header.length; c++) {
-          var h = String(header[c] || "").toLowerCase();
-          if (h.indexOf("barcode") > -1) colBarcode = c;
-          else if (h.indexOf("seri") > -1) colNoSeri = c;
-          else if (h.indexOf("code") > -1) colCode = c;
-          else if (h.indexOf("armada") > -1 || h.indexOf("id") > -1) colArmada = c;
-          else if (h.indexOf("polisi") > -1) colNopol = c;
-          else if (h.indexOf("posisi") > -1) colPosisi = c;
-          else if (h.indexOf("ukuran") > -1) colUkuran = c;
-          else if (h.indexOf("merk") > -1) colMerk = c;
-          else if (h.indexOf("kondisi") > -1) colKondisi = c;
-          else if (h.indexOf("tekanan") > -1) colTekanan = c;
-          else if (h.indexOf("keterangan") > -1 || h.indexOf("catatan") > -1) colKeterangan = c;
-          else if (h.indexOf("tahun") > -1) colTahun = c;
+          var h = String(header[c] || "").trim().toLowerCase();
+          if (!h) continue;
+
+          if (h === "id armada" || h === "armada id" || h === "id_armada" || (h.indexOf("armada") > -1 && h.indexOf("posisi") === -1)) {
+            if (colArmada === -1) colArmada = c;
+          }
+          if (h.indexOf("posisi") > -1) {
+            if (colPosisi === -1) colPosisi = c;
+          }
+          if (h.indexOf("polisi") > -1 || h.indexOf("nopol") > -1) {
+            if (colNopol === -1) colNopol = c;
+          }
+          if (h.indexOf("barcode") > -1) {
+            colBarcode = c;
+          }
+          if (h === "tahun ban" || h === "tahun" || h.indexOf("tahun") > -1) {
+            if (colTahun === -1) colTahun = c;
+          }
+          if (h === "code ban" || h === "kode ban" || (h.indexOf("code") > -1 && h.indexOf("ban") > -1) || h.indexOf("code") > -1 || h.indexOf("kode") > -1) {
+            if (colCode === -1 && h.indexOf("barcode") === -1) colCode = c;
+          }
+          if (h === "tanggal update" || h.indexOf("tanggal") > -1 || h.indexOf("update") > -1) {
+            if (colTanggal === -1) colTanggal = c;
+          }
+          if (h === "no seri" || h === "no. seri" || h.indexOf("seri") > -1) {
+            if (colNoSeri === -1) colNoSeri = c;
+          }
+          if (h.indexOf("ukuran") > -1) {
+            if (colUkuran === -1) colUkuran = c;
+          }
+          if (h.indexOf("merk") > -1) {
+            if (colMerk === -1) colMerk = c;
+          }
+          if (h.indexOf("kondisi") > -1) {
+            if (colKondisi === -1) colKondisi = c;
+          }
+          if (h.indexOf("tekanan") > -1) {
+            if (colTekanan === -1) colTekanan = c;
+          }
+          if (h.indexOf("keterangan") > -1 || h.indexOf("catatan") > -1) {
+            if (colKeterangan === -1) colKeterangan = c;
+          }
         }
       }
+
+      // Fallbacks if not detected by header name
+      if (colArmada === -1) colArmada = 0;
+      if (colPosisi === -1) colPosisi = 1;
+      if (colTahun === -1) colTahun = 2;
+      if (colCode === -1) colCode = 3;
+      if (colTanggal === -1) colTanggal = 4;
+      if (colNoSeri === -1) colNoSeri = 5;
+      if (colBarcode === -1) colBarcode = 6; // Target column G (index 6)
 
       var lastArmadaId = "";
       for (var i = 1; i < data.length; i++) {
         var r = data[i];
         if (!r) continue;
-        var aId = String(r[colArmada] || "").trim();
-        if (aId !== "") lastArmadaId = aId;
-        var nPol = String(r[colNopol] || "").trim();
-        var pos = String(r[colPosisi] || "").trim();
-        if (!aId && !lastArmadaId && !nPol && !pos) continue;
 
-        var bCode = String(r[colBarcode] || "").trim();
-        var nSeri = String(r[colNoSeri] || "").trim();
-        var cCode = String(r[colCode] || "").trim();
-        var bestBarcode = nSeri || cCode || bCode;
+        var aId = (colArmada >= 0 && colArmada < r.length) ? String(r[colArmada] || "").trim() : "";
+        if (aId !== "") lastArmadaId = aId;
+        var effectiveArmadaId = aId || lastArmadaId;
+
+        var nPol = (colNopol >= 0 && colNopol < r.length) ? String(r[colNopol] || "").trim() : "";
+        var pos = (colPosisi >= 0 && colPosisi < r.length) ? String(r[colPosisi] || "").trim() : "";
+
+        if (!effectiveArmadaId && !nPol && !pos) continue;
+
+        var bCode = (colBarcode >= 0 && colBarcode < r.length) ? String(r[colBarcode] || "").trim() : "";
+        // Legacy fallback: if Barcode at colBarcode is empty, check column K (index 10)
+        if (!bCode && r.length > 10) {
+          var legacyVal = String(r[10] || "").trim();
+          if (legacyVal) bCode = legacyVal;
+        }
+
+        var nSeri = (colNoSeri >= 0 && colNoSeri < r.length) ? String(r[colNoSeri] || "").trim() : "";
+        var cCode = (colCode >= 0 && colCode < r.length) ? String(r[colCode] || "").trim() : "";
+        var tTahun = (colTahun >= 0 && colTahun < r.length) ? String(r[colTahun] || "").trim() : "";
+        var tTanggal = (colTanggal >= 0 && colTanggal < r.length) ? String(r[colTanggal] || "").trim() : "";
+
+        var bestBarcode = bCode || nSeri || cCode;
 
         banList.push({
-          armadaId: aId || lastArmadaId,
+          armadaId: effectiveArmadaId,
           noPolisi: nPol,
           posisi: pos,
           barcode: bestBarcode,
-          noSeri: bestBarcode,
+          noSeri: nSeri || bestBarcode,
           codeBan: cCode || bestBarcode,
-          ukuran: String(r[colUkuran] || ""),
-          merk: String(r[colMerk] || ""),
-          kondisi: String(r[colKondisi] || "Bagus"),
-          tekanan: String(r[colTekanan] || ""),
-          keterangan: String(r[colKeterangan] || ""),
-          tahun: String(r[colTahun] || "")
+          ukuran: (colUkuran >= 0 && colUkuran < r.length) ? String(r[colUkuran] || "") : "",
+          merk: (colMerk >= 0 && colMerk < r.length) ? String(r[colMerk] || "") : "",
+          kondisi: (colKondisi >= 0 && colKondisi < r.length) ? String(r[colKondisi] || "Bagus") : "Bagus",
+          tekanan: (colTekanan >= 0 && colTekanan < r.length) ? String(r[colTekanan] || "") : "",
+          keterangan: (colKeterangan >= 0 && colKeterangan < r.length) ? String(r[colKeterangan] || "") : "",
+          tahun: tTahun,
+          tanggalUpdate: tTanggal
         });
       }
     }
@@ -1099,45 +1152,104 @@ function updateBan(contents, ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
   
-  var armadaId = String(data.armadaId || contents.armadaId || "").trim();
+  var armadaId = String(data.armadaId || contents.armadaId || "").trim().toUpperCase();
   var posisi = String(data.posisi || contents.posisi || "").trim();
-  var tahunBan = String(data.tahunBan || data.tahun || "").trim();
-  var codeBan = String(data.codeBan || data.barcode || "").trim();
-  var noSeri = String(data.noSeri || data.barcode || "").trim();
+  var tahunBan = String(data.tahunBan || data.tahun || contents.tahunBan || contents.tahun || "").trim();
+  var codeBan = String(data.codeBan || data.kodeBan || contents.codeBan || contents.kodeBan || "").trim();
+  var noSeri = String(data.noSeri || contents.noSeri || "").trim();
+  var barcode = String(data.barcode || contents.barcode || "").trim();
 
-  var sheet = getSheetByNameFromMap(ss, sheetMap, "BAN ARMADA") || 
+  // Cross-fill barcode/codeBan/noSeri if only one is provided
+  if (barcode && !codeBan) codeBan = barcode;
+  if (barcode && !noSeri) noSeri = barcode;
+  if (!barcode && (codeBan || noSeri)) barcode = codeBan || noSeri;
+
+  var sheet = getSheetByGid(sheetMap, GID_BAN) || 
+              getSheetByGid(ss, GID_BAN) || 
+              getSheetByNameFromMap(ss, sheetMap, "BAN ARMADA") || 
               getSheetByNameFromMap(ss, sheetMap, "Ban armada") || 
               getSheetByNameFromMap(ss, sheetMap, "Ban Armada") || 
               getSheetByNameFromMap(ss, sheetMap, "BAN");
   
   if (!sheet) {
     sheet = ss.insertSheet("BAN ARMADA");
-    sheet.appendRow(["ID ARMADA", "POSISI", "TAHUN BAN", "CODE BAN", "TANGGAL UPDATE", "No seri"]);
+    sheet.appendRow(["ID ARMADA", "POSISI", "TAHUN BAN", "CODE BAN", "TANGGAL UPDATE", "No seri", "Barcode"]);
   }
 
   var dataRange = sheet.getDataRange().getValues();
-  var headers = dataRange[0];
+  var headers = dataRange[0] || [];
   
-  // Mapping dinamis dengan fallback
+  // Dynamic header mapping
   var colMap = {
-    armada: headers.indexOf("ID ARMADA") !== -1 ? headers.indexOf("ID ARMADA") : 0,
-    posisi: headers.indexOf("POSISI") !== -1 ? headers.indexOf("POSISI") : 1,
-    tahun: headers.indexOf("TAHUN BAN") !== -1 ? headers.indexOf("TAHUN BAN") : 2,
-    code: headers.indexOf("CODE BAN") !== -1 ? headers.indexOf("CODE BAN") : 3,
-    tanggal: headers.indexOf("TANGGAL UPDATE") !== -1 ? headers.indexOf("TANGGAL UPDATE") : 4,
-    seri: headers.indexOf("No seri") !== -1 ? headers.indexOf("No seri") : 5
+    armada: -1,
+    posisi: -1,
+    tahun: -1,
+    code: -1,
+    tanggal: -1,
+    seri: -1,
+    barcode: -1
   };
-  
+
+  if (headers && headers.length > 0) {
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c] || "").trim().toLowerCase();
+      if (!h) continue;
+
+      if (h === "id armada" || h === "armada id" || h === "id_armada" || (h.indexOf("armada") > -1 && h.indexOf("posisi") === -1)) {
+        if (colMap.armada === -1) colMap.armada = c;
+      }
+      if (h.indexOf("posisi") > -1) {
+        if (colMap.posisi === -1) colMap.posisi = c;
+      }
+      if (h === "tahun ban" || h === "tahun" || h.indexOf("tahun") > -1) {
+        if (colMap.tahun === -1) colMap.tahun = c;
+      }
+      if (h === "code ban" || h === "kode ban" || (h.indexOf("code") > -1 && h.indexOf("ban") > -1) || h.indexOf("code") > -1 || h.indexOf("kode") > -1) {
+        if (colMap.code === -1 && h.indexOf("barcode") === -1) colMap.code = c;
+      }
+      if (h === "tanggal update" || h.indexOf("tanggal") > -1 || h.indexOf("update") > -1) {
+        if (colMap.tanggal === -1) colMap.tanggal = c;
+      }
+      if (h === "no seri" || h === "no. seri" || h.indexOf("seri") > -1) {
+        if (colMap.seri === -1) colMap.seri = c;
+      }
+      if (h.indexOf("barcode") > -1) {
+        colMap.barcode = c;
+      }
+    }
+  }
+
+  // Fallbacks if not matched by headers
+  if (colMap.armada === -1) colMap.armada = 0;
+  if (colMap.posisi === -1) colMap.posisi = 1;
+  if (colMap.tahun === -1) colMap.tahun = 2;
+  if (colMap.code === -1) colMap.code = 3;
+  if (colMap.tanggal === -1) colMap.tanggal = 4;
+  if (colMap.seri === -1) colMap.seri = 5;
+  if (colMap.barcode === -1) colMap.barcode = 6;
+
+  // Ensure column G / colMap.barcode header is present if missing or sheet has fewer columns
+  if (sheet.getMaxColumns() < colMap.barcode + 1) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), (colMap.barcode + 1) - sheet.getMaxColumns());
+  }
+  var barcodeHeaderVal = sheet.getRange(1, colMap.barcode + 1).getValue();
+  if (!barcodeHeaderVal || String(barcodeHeaderVal).trim() === "") {
+    sheet.getRange(1, colMap.barcode + 1).setValue("Barcode");
+  }
+
   var targetRow = -1;
   var lastArmada = "";
   
-  // Scanning data dengan forward-fill (menangani merge cell)
+  // Scanning data with forward-fill (handling merged cells)
   for (var i = 1; i < dataRange.length; i++) {
-    if (dataRange[i][colMap.armada] !== "") {
-      lastArmada = String(dataRange[i][colMap.armada]).trim();
+    var cellArmada = (colMap.armada >= 0 && colMap.armada < dataRange[i].length) ? String(dataRange[i][colMap.armada] || "").trim().toUpperCase() : "";
+    if (cellArmada !== "") {
+      lastArmada = cellArmada;
     }
-    var currentPosisi = String(dataRange[i][colMap.posisi] || "").trim();
-    if (lastArmada === armadaId && currentPosisi === posisi) {
+    var currentArmada = cellArmada || lastArmada;
+    var currentPosisi = (colMap.posisi >= 0 && colMap.posisi < dataRange[i].length) ? String(dataRange[i][colMap.posisi] || "").trim() : "";
+    
+    if (currentArmada === armadaId && currentPosisi.toLowerCase() === posisi.toLowerCase()) {
       targetRow = i + 1;
       break;
     }
@@ -1149,18 +1261,36 @@ function updateBan(contents, ss, sheetMap) {
   try {
     lock.waitLock(10000);
     if (targetRow !== -1) {
-      // UPDATE spesifik kolom (AMAN)
+      // UPDATE specific columns safely without overwriting other columns
       if (tahunBan) sheet.getRange(targetRow, colMap.tahun + 1).setValue(tahunBan);
       if (codeBan) sheet.getRange(targetRow, colMap.code + 1).setValue(codeBan);
       if (noSeri) sheet.getRange(targetRow, colMap.seri + 1).setValue(noSeri);
+      if (barcode) sheet.getRange(targetRow, colMap.barcode + 1).setValue(barcode);
       sheet.getRange(targetRow, colMap.tanggal + 1).setValue(timestamp);
+
+      // Legacy support: If Column K (index 10) exists and has header "Barcode", keep it updated if colMap.barcode != 10
+      if (colMap.barcode !== 10 && headers.length > 10) {
+        var h10 = String(headers[10] || "").trim().toLowerCase();
+        if (h10.indexOf("barcode") > -1 && barcode) {
+          sheet.getRange(targetRow, 11).setValue(barcode);
+        }
+      }
       
-      return { success: true, message: "Data ban berhasil diupdate pada baris " + targetRow };
+      return { success: true, message: "Data ban " + armadaId + " (" + posisi + ") berhasil diupdate pada baris " + targetRow };
     } else {
-      // APPEND baris baru
-      sheet.appendRow([armadaId, posisi, tahunBan, codeBan, timestamp, noSeri]);
-      
-      return { success: true, message: "Data ban baru berhasil ditambahkan." };
+      // APPEND new row matching columns
+      var newRowLength = Math.max(7, colMap.barcode + 1);
+      var newRow = new Array(newRowLength).fill("");
+      newRow[colMap.armada] = armadaId;
+      newRow[colMap.posisi] = posisi;
+      newRow[colMap.tahun] = tahunBan;
+      newRow[colMap.code] = codeBan;
+      newRow[colMap.tanggal] = timestamp;
+      newRow[colMap.seri] = noSeri;
+      newRow[colMap.barcode] = barcode;
+
+      sheet.appendRow(newRow);
+      return { success: true, message: "Data ban baru (" + armadaId + " - " + posisi + ") berhasil ditambahkan." };
     }
   } catch(e) {
     return { success: false, message: "Error updateBan: " + e.toString() };
