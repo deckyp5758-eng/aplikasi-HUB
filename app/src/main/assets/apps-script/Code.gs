@@ -20,9 +20,11 @@ var GID_BAN = 817527065;
 var GID_AKI = 1886867333;
 var GID_ARSIP_PENGIRIMAN = 1878433267;
 var GID_SURAT_JALAN = 1878433267; // GID Arsip Bukti Pengiriman
-var FOLDER_ID_PENGIRIMAN = "12NyXxBBU8MOcr6so-LCrRazCQifHeSv1";
-var FOLDER_ID_KM = "1ZpPEGaVCz0qmu37r_Eq8H8701a3bOS76";
-var FOLDER_ID_PENGAJUAN = "1Kk9f5f8_o8puwA3ZNJAKa_9cVy5TN5Lh";
+var FOLDER_ID_PENGIRIMAN = "1ima95RpfQrlaq2v_PJzk3HtRbcI03EcI"; // 05_BUKTI_PENGIRIMAN
+var FOLDER_ID_PROFIL_ARMADA = "1Byjocy7gfIxgYYs4P1lKRgHIqyPzAYPC"; // 02_FOTO_PROFIL_ARMADA
+var FOLDER_ID_KM = "1VP-UhNQ0XrLiZaG283_7qqRM-p8mQkhE"; // 03_FOTO_ODOMETER_KM
+var FOLDER_ID_PENGAJUAN = "1pHiCGelOHZdC01FZXWQlUBgo9ma3V0LG"; // 04_PENGAJUAN
+var FOLDER_ID_DATABASE = "1KfUvHtEbZtU_GQH9N88s-V0LQwRQzD7P"; // 01_DATABASE_DAN_BACKEND
 
 function getAdminEmail() {
   return PropertiesService.getScriptProperties().getProperty("ADMIN_EMAIL") || "deckyp5758@gmail.com";
@@ -1378,15 +1380,16 @@ function submitTerkirim(contents, ss, sheetMap) {
       logSheet.appendRow(["Tanggal & Waktu", "Driver", "No Dokumen", "No Surat Jalan", "Penerima / Alamat", "Catatan Driver", "Foto 1 (Depan)", "Foto 2 (Belakang)", "Foto 3 (Kiri)", "Foto 4 (Kanan)", "Foto 5 / Video", "Status"]);
     }
     
-    var orderNo = p.noSuratJalan || p.noDokumen || ("ORDER_" + Date.now());
-    var folderName = "Bukti_Pengiriman_" + orderNo;
+    var docNo = p.noDokumen || p.noSuratJalan || ("ORDER_" + Date.now());
+    var folderName = "Bukti_Pengiriman_" + docNo;
+    var subFolder = getOrCreateSubFolderById(FOLDER_ID_PENGIRIMAN, folderName);
     
     var fileLinks = [];
     if (p.files && p.files.length > 0) {
       for (var i = 0; i < p.files.length; i++) {
         var f = p.files[i];
         if (f.base64) {
-          var url = saveImageToDrive(f.base64, f.fileName || ("bukti_" + (i+1) + ".jpg"), folderName, f.mimeType || "image/jpeg");
+          var url = saveImageToSubFolder(f.base64, f.fileName || ("bukti_" + (i+1) + ".jpg"), subFolder, f.mimeType || "image/jpeg");
           if (url) fileLinks.push(url);
         } else if (f.url || f.link) {
           fileLinks.push(f.url || f.link);
@@ -1551,10 +1554,16 @@ function getSheetByGid(ssOrMap, gid) {
 
 function getOrCreateFolder(folderName) {
   var parentId = FOLDER_ID_PENGIRIMAN;
-  var fn = (folderName || "").toLowerCase();
+  var fn = (folderName || "").trim().toLowerCase();
   
-  if (fn.indexOf("km") !== -1 || fn.indexOf("odometer") !== -1) {
+  if (fn.indexOf("profil") !== -1 || fn.indexOf("armada") !== -1) {
+    parentId = FOLDER_ID_PROFIL_ARMADA;
+  } else if (fn.indexOf("km") !== -1 || fn.indexOf("odometer") !== -1) {
     parentId = FOLDER_ID_KM;
+  } else if (fn.indexOf("pengajuan") !== -1) {
+    parentId = FOLDER_ID_PENGAJUAN;
+  } else if (fn.indexOf("pengiriman") !== -1 || fn.indexOf("bukti") !== -1 || fn.indexOf("surat") !== -1) {
+    parentId = FOLDER_ID_PENGIRIMAN;
   }
   
   var parentFolder = null;
@@ -1569,6 +1578,14 @@ function getOrCreateFolder(folderName) {
   }
 
   if (!folderName || !parentFolder) {
+    return parentFolder;
+  }
+
+  // Jika folderName merujuk langsung ke nama kategori utama, gunakan parentFolder
+  if (fn === "02_foto_profil_armada" || fn === "foto profil armada" || fn === "foto profil" ||
+      fn === "03_foto_odometer_km" || fn === "foto odometer" || fn === "foto km" || fn === "odometer" ||
+      fn === "04_pengajuan" || fn === "pengajuan" ||
+      fn === "05_bukti_pengiriman" || fn === "bukti pengiriman") {
     return parentFolder;
   }
 
@@ -2009,8 +2026,8 @@ function submitPengajuan(contents, ss, sheetMap) {
     }
 
     var nowFormatted = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
-    var todayStr = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
-    var subfolderName = "PENGAJUAN" + todayStr;
+    var todayStr = Utilities.formatDate(new Date(), "GMT+7", "dd-MM-yyyy");
+    var subfolderName = "PENGAJUAN_" + todayStr;
 
     var parentFolderId = FOLDER_ID_PENGAJUAN;
     var subFolder = getOrCreateSubFolderById(parentFolderId, subfolderName);
@@ -2105,12 +2122,18 @@ function getPengajuan(ss, limit, sheetMap) {
 function getOrCreateSubFolderById(parentFolderId, subfolderName) {
   var parentFolder = null;
   try {
-    parentFolder = DriveApp.getFolderById(parentFolderId);
-  } catch(err) {
+    if (parentFolderId) parentFolder = DriveApp.getFolderById(parentFolderId);
+  } catch(err) {}
+  
+  if (!parentFolder) {
     try { parentFolder = DriveApp.getFolderById(FOLDER_ID_PENGAJUAN); } catch(e2) {}
   }
   if (!parentFolder) {
     try { parentFolder = DriveApp.getRootFolder(); } catch(eRoot) {}
+  }
+
+  if (!subfolderName || !parentFolder) {
+    return parentFolder;
   }
 
   try {
