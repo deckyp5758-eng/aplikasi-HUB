@@ -49,6 +49,11 @@ class ApkUpdateManager(
     private var downloadId: Long = -1L
 
     suspend fun checkForUpdates(): AppUpdateResponse? = withContext(Dispatchers.IO) {
+        // Debug APK tidak boleh memaksa unduhan dari URL release produksi.
+        if (BuildConfig.DEBUG) {
+            _updateState.value = UpdateUiState.Idle
+            return@withContext null
+        }
         try {
             _updateState.value = UpdateUiState.Checking
             val response = apiService.checkUpdate()

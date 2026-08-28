@@ -143,8 +143,8 @@ function doGet(e) {
         success: true,
         latestVersionCode: 1,
         latestVersionName: "1.0.0",
-        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/latest/download/app-release.apk",
-        forceUpdate: true,
+        apkDownloadUrl: "",
+        forceUpdate: false,
         changelog: "Pembaruan sistem validasi login driver dan peningkatan stabilitas aplikasi."
       });
     } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
