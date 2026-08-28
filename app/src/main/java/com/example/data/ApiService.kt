@@ -291,7 +291,8 @@ data class DriversApiResponse(
 
 data class DriverApiItem(
     val id: String,
-    val name: String
+    val name: String,
+    val pin: String? = null
 )
 
 data class ArmadaApiResponse(
@@ -319,7 +320,9 @@ data class ArmadaApiItem(
 
 data class LoginApiRequest(
     val action: String = "login",
-    val driverName: String,
+    val driverName: String? = null,
+    val driverId: String? = null,
+    val username: String? = null,
     val pin: String,
     val spreadsheetId: String? = null,
     val sheetId: String? = null

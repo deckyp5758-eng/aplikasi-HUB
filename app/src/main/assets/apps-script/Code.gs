@@ -259,30 +259,61 @@ function doPost(e) {
 // API ENDPOINTS (getDrivers, getArmada, getLogs, getBanArmada, getKirPajak, getPengiriman)
 // ============================================
 
-function getDrivers(ss, sheetMap) {
+function getDriverSheet(ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
-  var sheet = getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
-              getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
-              getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
-              getSheetByNameFromMap(ss, sheetMap, "DRIVERS") || 
-              getSheetByNameFromMap(ss, sheetMap, "Driver");
+  return getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
+         getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
+         getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
+         getSheetByNameFromMap(ss, sheetMap, "daftar-driver") || 
+         getSheetByNameFromMap(ss, sheetMap, "Daftar-Driver") || 
+         getSheetByNameFromMap(ss, sheetMap, "DAFTAR-DRIVER") || 
+         getSheetByNameFromMap(ss, sheetMap, "DAFTAR_DRIVER") || 
+         getSheetByNameFromMap(ss, sheetMap, "DRIVERS") || 
+         getSheetByNameFromMap(ss, sheetMap, "Driver") ||
+         getSheetByNameFromMap(ss, sheetMap, "Drivers");
+}
+
+function getDrivers(ss, sheetMap) {
+  var sheet = getDriverSheet(ss, sheetMap);
   var drivers = [];
   if (sheet) {
     var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] || data[i][1]) {
-        drivers.push({
-          id: String(data[i][0] || ("D0" + i)),
-          name: String(data[i][1] || data[i][0] || "").trim()
-        });
+    if (data.length >= 2) {
+      var headers = data[0].map(function(h) {
+        return String(h).trim().toLowerCase().replace(/[\s_\-]+/g, "");
+      });
+      var idCol = -1, nameCol = -1, pinCol = -1;
+      for (var c = 0; c < headers.length; c++) {
+        var h = headers[c];
+        if (idCol === -1 && (h === "iddriver" || h === "id" || h === "nik" || h === "nip" || h === "kodedriver" || h === "kode")) idCol = c;
+        if (nameCol === -1 && (h === "namadriver" || h === "nama" || h === "namalengkap")) nameCol = c;
+        if (pinCol === -1 && (h === "pin" || h === "pinkeamanan" || h === "pass" || h === "password")) pinCol = c;
+      }
+      if (idCol === -1) idCol = 0;
+      if (nameCol === -1) nameCol = (idCol === 0 ? 1 : 0);
+      if (pinCol === -1) pinCol = 2;
+
+      for (var i = 1; i < data.length; i++) {
+        var idVal = String(data[i][idCol] !== undefined && data[i][idCol] !== null ? data[i][idCol] : "").trim();
+        var nameVal = String(data[i][nameCol] !== undefined && data[i][nameCol] !== null ? data[i][nameCol] : "").trim();
+        var pinVal = data[i][pinCol] !== undefined && data[i][pinCol] !== null ? String(data[i][pinCol]).trim() : "";
+        if (pinVal.indexOf(".") !== -1) pinVal = pinVal.split(".")[0];
+
+        if (idVal || nameVal) {
+          drivers.push({
+            id: idVal || ("D0" + i),
+            name: nameVal || idVal,
+            pin: pinVal || "1234"
+          });
+        }
       }
     }
   }
   if (drivers.length === 0) {
     drivers = [
-      { id: "D01", name: "Driver HUB 1" },
-      { id: "D02", name: "Driver HUB 2" }
+      { id: "D01", name: "Driver HUB 1", pin: "1234" },
+      { id: "D02", name: "Driver HUB 2", pin: "5678" }
     ];
   }
   return drivers;
@@ -747,33 +778,59 @@ function calculateAkiGantiDateAndStatus(tglStr, userKeterangan) {
 // ============================================
 
 function validateLogin(contents, ss, sheetMap) {
-    var driverIdOrName = String(contents.driverName || contents.username || contents.driverId || "").trim();
+  var driverIdOrName = String(contents.driverName || contents.username || contents.driverId || "").trim();
   var pin = String(contents.pin || "").trim();
   if (!driverIdOrName || !pin) {
     return { success: false, driverId: null, driverName: null, message: "ID Driver dan PIN wajib diisi." };
   }
-  if (!ss) ss = getSpreadsheet();
-  if (!sheetMap) sheetMap = getSheetMap(ss);
-  var sheet = getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
-              getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
-              getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
-              getSheetByNameFromMap(ss, sheetMap, "DRIVERS") || 
-              getSheetByNameFromMap(ss, sheetMap, "Driver");
-  if (sheet) {
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      var id = String(data[i][0] || "").trim();
-      var name = String(data[i][1] || "").trim();
-      var storedPin = data[i][2] ? String(data[i][2]).trim() : "";
+  var sheet = getDriverSheet(ss, sheetMap);
+  if (!sheet) {
+    return { success: false, driverId: null, driverName: null, message: "Sheet Daftar Driver tidak ditemukan di spreadsheet." };
+  }
 
-      if (id.toLowerCase() === driverIdOrName.toLowerCase() || name.toLowerCase() === driverIdOrName.toLowerCase()) {
-        if (storedPin && storedPin === pin) {
-          return { success: true, driverId: id || "D01", driverName: name || driverIdOrName, message: "Login Berhasil" };
-        }
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    return { success: false, driverId: null, driverName: null, message: "Data Driver di spreadsheet kosong." };
+  }
+
+  var headers = data[0].map(function(h) {
+    return String(h).trim().toLowerCase().replace(/[\s_\-]+/g, "");
+  });
+
+  var idCol = -1, nameCol = -1, pinCol = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var h = headers[c];
+    if (idCol === -1 && (h === "iddriver" || h === "id" || h === "nik" || h === "nip" || h === "kodedriver" || h === "kode")) idCol = c;
+    if (nameCol === -1 && (h === "namadriver" || h === "nama" || h === "namalengkap")) nameCol = c;
+    if (pinCol === -1 && (h === "pin" || h === "pinkeamanan" || h === "pass" || h === "password")) pinCol = c;
+  }
+  if (idCol === -1) idCol = 0;
+  if (nameCol === -1) nameCol = (idCol === 0 ? 1 : 0);
+  if (pinCol === -1) pinCol = 2;
+
+  var targetClean = driverIdOrName.toLowerCase().replace(/[\s_\-]+/g, "");
+
+  for (var i = 1; i < data.length; i++) {
+    var idVal = String(data[i][idCol] !== undefined && data[i][idCol] !== null ? data[i][idCol] : "").trim();
+    var nameVal = String(data[i][nameCol] !== undefined && data[i][nameCol] !== null ? data[i][nameCol] : "").trim();
+    var rawPin = data[i][pinCol] !== undefined && data[i][pinCol] !== null ? String(data[i][pinCol]).trim() : "";
+    if (rawPin.indexOf(".") !== -1) {
+      rawPin = rawPin.split(".")[0];
+    }
+
+    var cleanId = idVal.toLowerCase().replace(/[\s_\-]+/g, "");
+    var cleanName = nameVal.toLowerCase().replace(/[\s_\-]+/g, "");
+
+    if (cleanId === targetClean || cleanName === targetClean || idVal.toLowerCase() === driverIdOrName.toLowerCase() || nameVal.toLowerCase() === driverIdOrName.toLowerCase()) {
+      if (!rawPin || rawPin === pin || rawPin === pin.split(".")[0]) {
+        return { success: true, driverId: idVal || driverIdOrName, driverName: nameVal || driverIdOrName, message: "Login Berhasil" };
+      } else {
+        return { success: false, driverId: idVal, driverName: nameVal, message: "PIN Keamanan salah." };
       }
     }
   }
-  return { success: false, driverId: null, driverName: null, message: "ID Driver atau PIN salah." };
+
+  return { success: false, driverId: null, driverName: null, message: "ID Driver atau Nama '" + driverIdOrName + "' tidak terdaftar di sheet." };
 }
 
 // ============================================

@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
@@ -36,6 +37,7 @@ class FleetRepository(
         const val GID_BAN = "817527065"
         const val GID_CATATAN_DRIVER = "1562754278"
         const val GID_AI_DATA = "888604592"
+        private const val TAG = "FleetRepository"
     }
 
     val localDrivers: Flow<List<DriverEntity>> = db.driverDao().getAllDrivers()
@@ -252,16 +254,19 @@ class FleetRepository(
     }
 
     suspend fun getDrivers(): List<DriverEntity> {
-
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
                 val response = service.getDrivers(spreadsheetId = SPREADSHEET_ARMADA, sheetId = GID_DAFTAR_DRIVER)
                 if (response.success && response.drivers != null && response.drivers.isNotEmpty()) {
                     val entities = response.drivers.map {
-                        DriverEntity(it.id, it.name, "1234") // default PIN for fetched drivers if not provided
+                        DriverEntity(
+                            idDriver = it.id,
+                            namaDriver = it.name,
+                            pin = it.pin?.takeIf { p -> p.isNotBlank() } ?: "1234"
+                        )
                     }
-                    db.driverDao().deleteAllDrivers() // Hapus total cache driver lama agar bersih dari data random sebelumnya
+                    db.driverDao().deleteAllDrivers() // Hapus total cache driver lama agar bersih
                     db.driverDao().insertDrivers(entities)
                     db.driverDao().getAllDrivers().first()
                 } else {
@@ -277,44 +282,55 @@ class FleetRepository(
     }
 
     suspend fun validateLogin(driverIdOrName: String, pin: String): LoginResult {
+        val cleanDriverId = driverIdOrName.trim()
+        val cleanPin = pin.trim()
 
         // 1. Ambil daftar semua pengemudi terdaftar dari database lokal
         var allDrivers = db.driverDao().getAllDrivers().first()
         if (allDrivers.isEmpty()) {
-            val defaults = listOf(
-                DriverEntity("D01", "Driver HUB 1", "1234"),
-                DriverEntity("D02", "Driver HUB 2", "5678")
-            )
-            db.driverDao().insertDrivers(defaults)
-            allDrivers = defaults
+            allDrivers = getDriverDefaults()
         }
 
-        // 2. Cari kecocokan pengemudi secara case-insensitive berdasarkan ID, Nama, atau format tanpa spasi
-        val cleanInput = driverIdOrName.trim().lowercase().replace(" ", "").replace("-", "")
-        val matchingDriver = allDrivers.find {
+        val cleanInput = cleanDriverId.lowercase().replace(" ", "").replace("-", "")
+        var matchingDriver = allDrivers.find {
             val cleanId = it.idDriver.trim().lowercase().replace(" ", "").replace("-", "")
             val cleanName = it.namaDriver.trim().lowercase().replace(" ", "").replace("-", "")
 
-            it.idDriver.trim().equals(driverIdOrName.trim(), ignoreCase = true) ||
-            it.namaDriver.trim().equals(driverIdOrName.trim(), ignoreCase = true) ||
+            it.idDriver.trim().equals(cleanDriverId, ignoreCase = true) ||
+            it.namaDriver.trim().equals(cleanDriverId, ignoreCase = true) ||
             cleanId == cleanInput ||
-            cleanName == cleanInput ||
-            (cleanId.startsWith("d") && cleanInput.startsWith("d") && cleanId.trimStart('d').toIntOrNull() != null && cleanId.trimStart('d').toIntOrNull() == cleanInput.trimStart('d').toIntOrNull())
+            cleanName == cleanInput
         }
 
-        // Jika tidak ditemukan di database terdaftar, tolak langsung login acak ini
-        if (matchingDriver == null) {
-            return LoginResult.Error("ID Driver atau Nama tidak terdaftar di sistem.")
+        // 2. Jika tidak ditemukan secara lokal dan terhubung online, coba sinkronkan daftar driver dari server lebih dahulu
+        if (matchingDriver == null && prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val freshList = getDrivers()
+                allDrivers = freshList
+                matchingDriver = allDrivers.find {
+                    val cleanId = it.idDriver.trim().lowercase().replace(" ", "").replace("-", "")
+                    val cleanName = it.namaDriver.trim().lowercase().replace(" ", "").replace("-", "")
+
+                    it.idDriver.trim().equals(cleanDriverId, ignoreCase = true) ||
+                    it.namaDriver.trim().equals(cleanDriverId, ignoreCase = true) ||
+                    cleanId == cleanInput ||
+                    cleanName == cleanInput
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Gagal sinkronisasi driver awal: ${e.message}")
+            }
         }
 
-        // 3. Proses Validasi PIN
+        // 3. Proses Validasi PIN Server / Lokal
         if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             return try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
                 val response = service.login(
                     request = LoginApiRequest(
-                        driverName = matchingDriver.namaDriver,
-                        pin = pin,
+                        driverId = matchingDriver?.idDriver ?: cleanDriverId,
+                        driverName = matchingDriver?.namaDriver ?: cleanDriverId,
+                        username = cleanDriverId,
+                        pin = cleanPin,
                         spreadsheetId = SPREADSHEET_ARMADA,
                         sheetId = GID_DAFTAR_DRIVER
                     ),
@@ -323,45 +339,37 @@ class FleetRepository(
                 )
 
                 if (response.success && response.driverName != null) {
-                    val returnedId = response.driverId ?: matchingDriver.idDriver
-                    
-                    // Deteksi bypass server jika server mengembalikan default "D01" padahal inputnya pengemudi lain
-                    val isBypassed = response.message?.contains("override offline", ignoreCase = true) == true ||
-                            (matchingDriver.idDriver != "D01" && returnedId == "D01")
+                    val returnedId = response.driverId ?: matchingDriver?.idDriver ?: cleanDriverId
+                    val returnedName = response.driverName ?: matchingDriver?.namaDriver ?: cleanDriverId
 
-                    if (isBypassed) {
-                        // Jika terdeteksi bypass luring dari Apps Script, paksa verifikasi PIN secara lokal
-                        if (matchingDriver.pin == pin) {
-                            prefs.loggedInDriverName = matchingDriver.namaDriver
-                            prefs.loggedInDriverId = matchingDriver.idDriver
-                            LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
-                        } else {
-                            LoginResult.Error("PIN Keamanan salah.")
-                        }
-                    } else {
-                        // Otentikasi server murni sukses & valid
-                        prefs.loggedInDriverName = response.driverName
-                        prefs.loggedInDriverId = returnedId
-                        // Update PIN lokal ke PIN terbaru untuk login luring di kemudian hari
-                        db.driverDao().insertDrivers(listOf(DriverEntity(returnedId, response.driverName, pin)))
-                        LoginResult.Success(response.driverName, returnedId)
-                    }
+                    prefs.loggedInDriverName = returnedName
+                    prefs.loggedInDriverId = returnedId
+                    // Simpan ke DB lokal
+                    db.driverDao().insertDrivers(listOf(DriverEntity(returnedId, returnedName, cleanPin)))
+                    LoginResult.Success(returnedName, returnedId)
                 } else {
-                    LoginResult.Error(response.message ?: "PIN Keamanan salah.")
+                    LoginResult.Error(response.message ?: "ID Driver atau PIN salah.")
                 }
             } catch (e: Exception) {
-                // Fallback verifikasi lokal jika server tidak dapat dihubungi (luring)
-                if (matchingDriver.pin == pin) {
-                    prefs.loggedInDriverName = matchingDriver.namaDriver
-                    prefs.loggedInDriverId = matchingDriver.idDriver
-                    LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
+                Log.e(TAG, "Error server login, fallback offline: ${e.message}")
+                if (matchingDriver != null) {
+                    if (matchingDriver.pin.isBlank() || matchingDriver.pin == cleanPin) {
+                        prefs.loggedInDriverName = matchingDriver.namaDriver
+                        prefs.loggedInDriverId = matchingDriver.idDriver
+                        LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
+                    } else {
+                        LoginResult.Error("PIN Keamanan salah.")
+                    }
                 } else {
-                    LoginResult.Error("PIN Keamanan salah.")
+                    LoginResult.Error("Gagal terhubung ke server dan ID Driver tidak ada di cache lokal.")
                 }
             }
         } else {
             // Mode luring (Offline) penuh
-            return if (matchingDriver.pin == pin) {
+            if (matchingDriver == null) {
+                return LoginResult.Error("ID Driver atau Nama tidak terdaftar di sistem.")
+            }
+            return if (matchingDriver.pin.isBlank() || matchingDriver.pin == cleanPin) {
                 prefs.loggedInDriverName = matchingDriver.namaDriver
                 prefs.loggedInDriverId = matchingDriver.idDriver
                 LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
