@@ -799,14 +799,32 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         return sb.toString()
     }
 
+    private val _isFotoTruckUploading = MutableStateFlow(false)
+    val isFotoTruckUploading: StateFlow<Boolean> = _isFotoTruckUploading.asStateFlow()
+
+    private val _fotoTruckUploadStatus = MutableStateFlow<String?>(null)
+    val fotoTruckUploadStatus: StateFlow<String?> = _fotoTruckUploadStatus.asStateFlow()
+
+    private val _isFotoServiceUploading = MutableStateFlow(false)
+    val isFotoServiceUploading: StateFlow<Boolean> = _isFotoServiceUploading.asStateFlow()
+
+    private val _fotoServiceUploadStatus = MutableStateFlow<String?>(null)
+    val fotoServiceUploadStatus: StateFlow<String?> = _fotoServiceUploadStatus.asStateFlow()
+
+    fun clearFotoUploadStatus() {
+        _fotoTruckUploadStatus.value = null
+        _fotoServiceUploadStatus.value = null
+    }
+
     fun updateArmadaFotoTruck(armadaId: String, uriString: String) {
         viewModelScope.launch {
+            _isFotoTruckUploading.value = true
+            _fotoTruckUploadStatus.value = null
             val context = getApplication<Application>()
             try {
                 val uri = android.net.Uri.parse(uriString)
                 val bytes = ImageCompressor.compressUriToWebP(context, uri, maxDimension = 1280, quality = 80)
                 if (bytes != null) {
-                    // Save locally first for offline cache
                     val dir = java.io.File(context.filesDir, "truck_photos")
                     if (!dir.exists()) {
                         dir.mkdirs()
@@ -814,15 +832,16 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                     val destFile = java.io.File(dir, "truck_${armadaId}_${System.currentTimeMillis()}.webp")
                     destFile.writeBytes(bytes)
                     
-                    // Upload to Google Drive / Sheets in high-efficiency WebP format
                     val mimeType = ImageCompressor.MIME_TYPE_WEBP
                     val uploadResult = repository.updateFotoArmada(armadaId, bytes, mimeType)
                     
                     val linkFoto = when (uploadResult) {
                         is com.example.data.UpdateFotoArmadaResult.Success -> {
+                            _fotoTruckUploadStatus.value = uploadResult.message
                             if (uploadResult.linkFoto.isNotEmpty()) uploadResult.linkFoto else destFile.absolutePath
                         }
                         is com.example.data.UpdateFotoArmadaResult.Error -> {
+                            _fotoTruckUploadStatus.value = "Error: ${uploadResult.message}"
                             destFile.absolutePath
                         }
                     }
@@ -833,9 +852,62 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                         db.armadaDao().updateArmada(updated)
                         refreshMetadata()
                     }
+                } else {
+                    _fotoTruckUploadStatus.value = "Error: Kompresi foto gagal."
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                _fotoTruckUploadStatus.value = "Gagal upload: ${e.localizedMessage}"
+            } finally {
+                _isFotoTruckUploading.value = false
+            }
+        }
+    }
+
+    fun updateArmadaFotoService(armadaId: String, uriString: String) {
+        viewModelScope.launch {
+            _isFotoServiceUploading.value = true
+            _fotoServiceUploadStatus.value = null
+            val context = getApplication<Application>()
+            try {
+                val uri = android.net.Uri.parse(uriString)
+                val bytes = ImageCompressor.compressUriToWebP(context, uri, maxDimension = 1280, quality = 80)
+                if (bytes != null) {
+                    val dir = java.io.File(context.filesDir, "service_tag_photos")
+                    if (!dir.exists()) {
+                        dir.mkdirs()
+                    }
+                    val destFile = java.io.File(dir, "service_tag_${armadaId}_${System.currentTimeMillis()}.webp")
+                    destFile.writeBytes(bytes)
+                    
+                    val mimeType = ImageCompressor.MIME_TYPE_WEBP
+                    val uploadResult = repository.updateArmadaFotoService(armadaId, bytes, mimeType)
+                    
+                    val linkFoto = when (uploadResult) {
+                        is com.example.data.UpdateFotoArmadaResult.Success -> {
+                            _fotoServiceUploadStatus.value = uploadResult.message
+                            if (uploadResult.linkFoto.isNotEmpty()) uploadResult.linkFoto else destFile.absolutePath
+                        }
+                        is com.example.data.UpdateFotoArmadaResult.Error -> {
+                            _fotoServiceUploadStatus.value = "Error: ${uploadResult.message}"
+                            destFile.absolutePath
+                        }
+                    }
+                    
+                    val local = db.armadaDao().getArmadaById(armadaId)
+                    if (local != null) {
+                        val updated = local.copy(fotoService = linkFoto)
+                        db.armadaDao().updateArmada(updated)
+                        refreshMetadata()
+                    }
+                } else {
+                    _fotoServiceUploadStatus.value = "Error: Kompresi foto gagal."
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _fotoServiceUploadStatus.value = "Gagal upload foto service: ${e.localizedMessage}"
+            } finally {
+                _isFotoServiceUploading.value = false
             }
         }
     }

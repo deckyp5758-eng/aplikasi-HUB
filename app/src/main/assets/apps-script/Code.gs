@@ -234,6 +234,8 @@ function doPost(e) {
       return jsonResponse(submitTerkirim(contents, ss, sheetMap));
     } else if (action === "updateFotoArmada" || action === "update_foto_armada") {
       return jsonResponse(updateFotoArmada(contents, ss, sheetMap));
+    } else if (action === "updateFotoServiceArmada" || action === "update_foto_service_armada") {
+      return jsonResponse(updateFotoServiceArmada(contents, ss, sheetMap));
     } else if (action === "submit_catatan_driver" || action === "submitCatatanDriver") {
       return jsonResponse(submitCatatanDriver(contents, ss, sheetMap));
     } else if (action === "clear_catatan_driver" || action === "clearCatatanDriver") {
@@ -378,9 +380,10 @@ function getArmada(ss, sheetMap) {
   var kirMap = getKirPajakMap(ss, sheetMap);
   var armadaList = [];
 
-  // Foto profil armada disimpan langsung pada kolom L (index 11).
-  // Kolom ini dipisahkan dari FOTO KM pada kolom J.
+  // Foto profil armada disimpan pada kolom L (index 11).
+  // Foto gantungan service disimpan pada kolom M (index 12).
   var fotoProfileCol = 11;
+  var fotoServiceCol = 12;
 
   if (sheet) {
     var data = sheet.getDataRange().getValues();
@@ -392,6 +395,12 @@ function getArmada(ss, sheetMap) {
         var profileFoto = (data[i][fotoProfileCol] !== undefined && data[i][fotoProfileCol] !== null)
           ? String(data[i][fotoProfileCol] || "").trim()
           : "";
+        var serviceFoto = (data[i][fotoServiceCol] !== undefined && data[i][fotoServiceCol] !== null)
+          ? String(data[i][fotoServiceCol] || "").trim()
+          : "";
+        if (serviceFoto.toUpperCase().indexOf("GANTUNGAN") !== -1 || serviceFoto.toUpperCase().indexOf("FOTO GANTUNGAN") !== -1) {
+          serviceFoto = "";
+        }
         var noteVal = String(data[i][10] || data[i][9] || "");
 
         var kmSaatIni = Number(data[i][2]) || 0;
@@ -416,7 +425,9 @@ function getArmada(ss, sheetMap) {
           pajakTahunan: extra.pajakTahunan || formatDateVal(data[i][5] || ""),
           kir: extra.kir || formatDateVal(data[i][6] || ""),
           pajak5Tahunan: extra.pajak5Tahunan || formatDateVal(data[i][7] || ""),
-          fotoTruck: profileFoto
+          fotoTruck: profileFoto,
+          fotoService: serviceFoto,
+          fotoGantunganService: serviceFoto
         });
       }
     }
@@ -1417,6 +1428,67 @@ function updateFotoArmada(contents, ss, sheetMap) {
   }
 }
 
+function updateFotoServiceArmada(contents, ss, sheetMap) {
+  var armadaId = String(contents.armadaId || "").trim().toUpperCase();
+  var base64Photo = contents.base64Photo || contents.fotoBase64 || "";
+  var photoMimeType = contents.photoMimeType || "image/jpeg";
+  var fotoServiceCol = 13; // Kolom M (1-based index 13) pada sheet Armada.
+
+  if (!armadaId) return { success: false, message: "Armada ID wajib diisi." };
+  if (!base64Photo) return { success: false, message: "Tidak ada data foto yang dikirim." };
+
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+
+  try {
+    var sheet = getSheetByGid(sheetMap, GID_ARMADA) ||
+                getSheetByGid(ss, GID_ARMADA) ||
+                getSheetByNameFromMap(ss, sheetMap, "ARMADA") ||
+                getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (!sheet) return { success: false, message: "Sheet 'Armada' tidak ditemukan." };
+
+    var data = sheet.getDataRange().getValues();
+    var targetRowIndex = -1;
+    for (var i = 1; i < data.length; i++) {
+      var cellVal = data[i][0] ? String(data[i][0]).trim().toUpperCase() : "";
+      if (cellVal === armadaId) {
+        targetRowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (targetRowIndex === -1) {
+      return { success: false, message: "Armada ID " + armadaId + " tidak ditemukan pada sheet Armada." };
+    }
+
+    if (sheet.getMaxColumns() < fotoServiceCol) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), fotoServiceCol - sheet.getMaxColumns());
+    }
+    var headerCell = sheet.getRange(1, fotoServiceCol).getValue();
+    if (!headerCell || String(headerCell).trim() === "" || String(headerCell).toUpperCase().indexOf("FOTO GANTUNGAN") === -1) {
+      sheet.getRange(1, fotoServiceCol).setValue("FOTO GANTUNGAN SERVICE");
+    }
+
+    var linkFoto = saveImageToDrive(
+      base64Photo,
+      "SERVICE_TAG_" + armadaId + "_" + new Date().getTime() + ".jpg",
+      "FOTO_GANTUNGAN_SERVICE",
+      photoMimeType
+    );
+    if (!linkFoto) return { success: false, message: "Foto gagal disimpan ke Google Drive." };
+
+    sheet.getRange(targetRowIndex, fotoServiceCol).setValue(linkFoto);
+
+    return {
+      success: true,
+      linkFoto: linkFoto,
+      message: "Foto gantungan service armada " + armadaId + " berhasil disimpan pada kolom FOTO GANTUNGAN SERVICE."
+    };
+  } catch(err) {
+    return { success: false, message: "Gagal update foto gantungan service: " + err.toString() };
+  }
+}
+
 function submitTerkirim(contents, ss, sheetMap) {
   var p = contents.request || contents;
   if (!ss) ss = getSpreadsheet();
@@ -1613,7 +1685,7 @@ function getOrCreateFolder(folderName) {
   var parentId = FOLDER_ID_PENGIRIMAN;
   var fn = (folderName || "").trim().toLowerCase();
   
-  if (fn.indexOf("profil") !== -1 || fn.indexOf("armada") !== -1) {
+  if (fn.indexOf("gantungan") !== -1 || fn.indexOf("service") !== -1 || fn.indexOf("profil") !== -1 || fn.indexOf("armada") !== -1) {
     parentId = FOLDER_ID_PROFIL_ARMADA;
   } else if (fn.indexOf("km") !== -1 || fn.indexOf("odometer") !== -1) {
     parentId = FOLDER_ID_KM;
@@ -1646,12 +1718,17 @@ function getOrCreateFolder(folderName) {
     return parentFolder;
   }
 
+  var targetSubFolderName = folderName;
+  if (fn.indexOf("gantungan") !== -1 || fn.indexOf("service") !== -1) {
+    targetSubFolderName = "FOTO_GANTUNGAN_SERVICE";
+  }
+
   try {
-    var subFolders = parentFolder.getFoldersByName(folderName);
+    var subFolders = parentFolder.getFoldersByName(targetSubFolderName);
     if (subFolders.hasNext()) {
       return subFolders.next();
     } else {
-      return parentFolder.createFolder(folderName);
+      return parentFolder.createFolder(targetSubFolderName);
     }
   } catch(e) {
     Logger.log("getOrCreateFolder subfolder error: " + e.toString());
@@ -2416,7 +2493,7 @@ function setupAllSheets(ss) {
 // -------------------------------------------------------------
 function setupSheetArmada(ss) {
   var sheet = ss.getSheetByName("Armada") || ss.insertSheet("Armada");
-  var headers = [["Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "KM Service Berikutnya", "Sisa KM", "Status", "Flag", "Foto KM", "Catatan", "Pajak Tahunan", "KIR Date", "Pajak 5 Tahunan", "Foto Truck"]];
+  var headers = [["Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "KM Service Berikutnya", "Sisa KM", "Status", "Flag", "Foto KM", "Catatan", "FOTO PROFIL ARMADA", "FOTO GANTUNGAN SERVICE"]];
   
   applyHeaderStyle(sheet, headers, "#0A2540");
   

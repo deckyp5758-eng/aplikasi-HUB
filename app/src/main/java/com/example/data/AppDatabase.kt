@@ -4,14 +4,21 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE armada ADD COLUMN fotoService TEXT DEFAULT NULL")
+    }
+}
+
 @Database(
     entities = [DriverEntity::class, ArmadaEntity::class, LogHarianEntity::class, BanEntity::class, PengirimanEntity::class, CatatanDriverEntity::class, PengajuanEntity::class],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,6 +41,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "fleet_database"
                 )
+                .addMigrations(MIGRATION_10_11)
                 .addCallback(DatabaseCallback(scope))
                 .fallbackToDestructiveMigration()
                 .build()

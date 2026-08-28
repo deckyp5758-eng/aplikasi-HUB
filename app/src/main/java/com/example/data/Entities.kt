@@ -26,7 +26,8 @@ data class ArmadaEntity(
     val pajakTahunan: String? = null,
     val kirDate: String? = null,
     val pajak5Tahunan: String? = null,
-    val fotoTruck: String? = null
+    val fotoTruck: String? = null,
+    val fotoService: String? = null
 )
 
 @Entity(tableName = "log_harian")

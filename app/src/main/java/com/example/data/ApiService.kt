@@ -99,6 +99,14 @@ interface ApiService {
     ): UpdateFotoArmadaApiResponse
 
     @POST("exec")
+    suspend fun updateFotoServiceArmada(
+        @Body request: UpdateFotoServiceArmadaApiRequest,
+        @Query("action") action: String = "updateFotoServiceArmada",
+        @Query("spreadsheetId") spreadsheetId: String? = null,
+        @Query("sheetId") sheetId: String? = null
+    ): UpdateFotoArmadaApiResponse
+
+    @POST("exec")
     suspend fun addPengiriman(
         @Body request: AddPengirimanApiRequest,
         @Query("action") action: String = "addPengiriman",
@@ -315,7 +323,8 @@ data class ArmadaApiItem(
     val pajakTahunan: String? = null,
     val kir: String? = null,
     val pajak5Tahunan: String? = null,
-    val fotoTruck: String? = null
+    val fotoTruck: String? = null,
+    val fotoService: String? = null
 )
 
 data class LoginApiRequest(
@@ -458,6 +467,15 @@ data class UpdateBanApiResponse(
 
 data class UpdateFotoArmadaApiRequest(
     val action: String = "update_foto_armada",
+    val armadaId: String,
+    val base64Photo: String,
+    val photoMimeType: String = "image/jpeg",
+    val spreadsheetId: String? = null,
+    val sheetId: String? = null
+)
+
+data class UpdateFotoServiceArmadaApiRequest(
+    val action: String = "update_foto_service_armada",
     val armadaId: String,
     val base64Photo: String,
     val photoMimeType: String = "image/jpeg",

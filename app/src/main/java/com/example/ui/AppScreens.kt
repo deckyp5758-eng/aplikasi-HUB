@@ -1096,11 +1096,16 @@ fun DetailArmadaDialog(
     banList: List<BanEntity>,
     onDismiss: () -> Unit,
     onUpdateFotoTruck: (String) -> Unit,
+    onUpdateFotoService: (String) -> Unit = {},
     onUpdateBan: (posisi: String, barcode: String, tahun: String, kodeBan: String, tanggalUpdate: String) -> Unit,
     onUpdateAki: (barcode: String, tanggalPasang: String, merk: String, status: String) -> Unit,
     banUpdateStatus: String?,
     isBanUpdating: Boolean,
-    onClearBanUpdateStatus: () -> Unit
+    onClearBanUpdateStatus: () -> Unit,
+    isFotoTruckUploading: Boolean = false,
+    fotoTruckUploadStatus: String? = null,
+    isFotoServiceUploading: Boolean = false,
+    fotoServiceUploadStatus: String? = null
 ) {
     val truckImages = listOf(
         "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=600&auto=format&fit=crop&q=80",
@@ -1114,6 +1119,9 @@ fun DetailArmadaDialog(
         val index = armada.armadaId.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 1
         truckImages.getOrElse((index - 1) % truckImages.size) { truckImages[0] }
     }
+    val serviceImgUrl = if (!armada.fotoService.isNullOrEmpty()) {
+        getDirectDriveImageUrl(armada.fotoService)
+    } else null
     
     val formatKm = { num: Int ->
         String.format("%,d", num).replace(',', '.')
@@ -1124,6 +1132,14 @@ fun DetailArmadaDialog(
     ) { uri: android.net.Uri? ->
         if (uri != null) {
             onUpdateFotoTruck(uri.toString())
+        }
+    }
+
+    val serviceImageLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            onUpdateFotoService(uri.toString())
         }
     }
 
@@ -1192,6 +1208,7 @@ fun DetailArmadaDialog(
                             modifier = Modifier
                                 .size(90.dp)
                                 .clip(RoundedCornerShape(12.dp))
+                                .clickable { if (!imgUrl.isNullOrEmpty()) fullScreenImageUrl = imgUrl }
                         ) {
                             AsyncImage(
                                 model = imgUrl,
@@ -1312,6 +1329,174 @@ fun DetailArmadaDialog(
                 ) {
                     if (selectedTabState == 0) {
                         // TAB 0: Maintenance & Documents
+                        item {
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth(),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = "Dokumentasi Foto Armada",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        // 1. Foto Profil (Kolom L)
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Profil Armada (L)",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(110.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                                                    .clickable { if (!imgUrl.isNullOrEmpty()) fullScreenImageUrl = imgUrl },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                AsyncImage(
+                                                    model = imgUrl,
+                                                    contentDescription = "Foto Profil Armada",
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                if (isFotoTruckUploading) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color.Black.copy(alpha = 0.4f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
+                                                    }
+                                                }
+                                            }
+                                            Button(
+                                                onClick = { imageLauncher.launch("image/*") },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = 36.dp),
+                                                enabled = !isFotoTruckUploading,
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Ganti Profil", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp))
+                                            }
+                                            fotoTruckUploadStatus?.let { status ->
+                                                Text(
+                                                    text = status,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                    color = if (status.startsWith("Error") || status.startsWith("Gagal")) MaterialTheme.colorScheme.error else Color(0xFF10B981)
+                                                )
+                                            }
+                                        }
+
+                                        // 2. Foto Gantungan Service (Kolom M)
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Gantungan Service (M)",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(110.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                                                    .clickable { if (!serviceImgUrl.isNullOrEmpty()) fullScreenImageUrl = serviceImgUrl },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (!serviceImgUrl.isNullOrEmpty()) {
+                                                    AsyncImage(
+                                                        model = serviceImgUrl,
+                                                        contentDescription = "Foto Gantungan Service",
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                        modifier = Modifier.padding(8.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.AddPhotoAlternate,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                            modifier = Modifier.size(32.dp)
+                                                        )
+                                                        Text(
+                                                            text = "Belum Ada Foto",
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                        )
+                                                    }
+                                                }
+
+                                                if (isFotoServiceUploading) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color.Black.copy(alpha = 0.4f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
+                                                    }
+                                                }
+                                            }
+                                            Button(
+                                                onClick = { serviceImageLauncher.launch("image/*") },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = 36.dp),
+                                                enabled = !isFotoServiceUploading,
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(if (serviceImgUrl.isNullOrEmpty()) "Upload Service" else "Ganti Service", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp))
+                                            }
+                                            fotoServiceUploadStatus?.let { status ->
+                                                Text(
+                                                    text = status,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                    color = if (status.startsWith("Error") || status.startsWith("Gagal")) MaterialTheme.colorScheme.error else Color(0xFF10B981)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         item {
                             Card(
                                 shape = RoundedCornerShape(16.dp),
@@ -2135,6 +2320,10 @@ fun HistoryScreen(viewModel: FleetViewModel) {
         val liveArmada = armadaList.find { it.armadaId == armada.armadaId } ?: armada
         val banUpdateStatus by viewModel.banUpdateStatus.collectAsStateWithLifecycle()
         val isBanUpdating by viewModel.isBanUpdating.collectAsStateWithLifecycle()
+        val isFotoTruckUploading by viewModel.isFotoTruckUploading.collectAsStateWithLifecycle()
+        val fotoTruckUploadStatus by viewModel.fotoTruckUploadStatus.collectAsStateWithLifecycle()
+        val isFotoServiceUploading by viewModel.isFotoServiceUploading.collectAsStateWithLifecycle()
+        val fotoServiceUploadStatus by viewModel.fotoServiceUploadStatus.collectAsStateWithLifecycle()
         
         DetailArmadaDialog(
             armada = liveArmada,
@@ -2144,6 +2333,9 @@ fun HistoryScreen(viewModel: FleetViewModel) {
             onUpdateFotoTruck = { uriString ->
                 viewModel.updateArmadaFotoTruck(armada.armadaId, uriString)
             },
+            onUpdateFotoService = { uriString ->
+                viewModel.updateArmadaFotoService(armada.armadaId, uriString)
+            },
             onUpdateBan = { posisi, barcode, tahun, kodeBan, tanggalUpdate ->
                 viewModel.updateBan(armada.armadaId, posisi, barcode, tahun, kodeBan, tanggalUpdate)
             },
@@ -2152,7 +2344,11 @@ fun HistoryScreen(viewModel: FleetViewModel) {
             },
             banUpdateStatus = banUpdateStatus,
             isBanUpdating = isBanUpdating,
-            onClearBanUpdateStatus = { viewModel.clearBanUpdateStatus() }
+            onClearBanUpdateStatus = { viewModel.clearBanUpdateStatus() },
+            isFotoTruckUploading = isFotoTruckUploading,
+            fotoTruckUploadStatus = fotoTruckUploadStatus,
+            isFotoServiceUploading = isFotoServiceUploading,
+            fotoServiceUploadStatus = fotoServiceUploadStatus
         )
     }
 

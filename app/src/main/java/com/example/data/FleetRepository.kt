@@ -419,7 +419,8 @@ class FleetRepository(
                             pajakTahunan = it.pajakTahunan,
                             kirDate = it.kir,
                             pajak5Tahunan = it.pajak5Tahunan,
-                            fotoTruck = it.fotoTruck ?: local?.fotoTruck
+                            fotoTruck = if (!it.fotoTruck.isNullOrEmpty()) it.fotoTruck else local?.fotoTruck,
+                            fotoService = if (!it.fotoService.isNullOrEmpty()) it.fotoService else local?.fotoService
                         )
                     }
                     db.armadaDao().insertArmada(entities)
@@ -894,6 +895,10 @@ class FleetRepository(
                     sheetId = GID_ARMADA
                 )
                 if (response.success) {
+                    val localArmada = db.armadaDao().getArmadaById(armadaId)
+                    if (localArmada != null && !response.linkFoto.isNullOrEmpty()) {
+                        db.armadaDao().updateArmada(localArmada.copy(fotoTruck = response.linkFoto))
+                    }
                     UpdateFotoArmadaResult.Success(response.linkFoto ?: "", response.message ?: "Berhasil.")
                 } else {
                     UpdateFotoArmadaResult.Error(response.message ?: "Gagal memperbarui foto profil armada di server.")
@@ -904,6 +909,51 @@ class FleetRepository(
             }
         } else {
             return UpdateFotoArmadaResult.Success("", "Berhasil memperbarui foto profil secara lokal.")
+        }
+    }
+
+    suspend fun updateArmadaFotoService(
+        armadaId: String,
+        photoBytes: ByteArray,
+        photoMimeType: String
+    ): UpdateFotoArmadaResult {
+        if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            return try {
+                val base64Photo = android.util.Base64.encodeToString(photoBytes, android.util.Base64.NO_WRAP)
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val response = service.updateFotoServiceArmada(
+                    request = UpdateFotoServiceArmadaApiRequest(
+                        armadaId = armadaId,
+                        base64Photo = base64Photo,
+                        photoMimeType = photoMimeType,
+                        spreadsheetId = SPREADSHEET_ARMADA,
+                        sheetId = GID_ARMADA
+                    ),
+                    spreadsheetId = SPREADSHEET_ARMADA,
+                    sheetId = GID_ARMADA
+                )
+                if (response.success) {
+                    val localArmada = db.armadaDao().getArmadaById(armadaId)
+                    if (localArmada != null && !response.linkFoto.isNullOrEmpty()) {
+                        db.armadaDao().updateArmada(localArmada.copy(fotoService = response.linkFoto))
+                    }
+                    UpdateFotoArmadaResult.Success(response.linkFoto ?: "", response.message ?: "Berhasil simpan foto gantungan service.")
+                } else {
+                    UpdateFotoArmadaResult.Error(response.message ?: "Gagal memperbarui foto gantungan service di server.")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                UpdateFotoArmadaResult.Error("Gagal memperbarui foto gantungan service ke server: ${e.localizedMessage}")
+            }
+        } else {
+            val localArmada = db.armadaDao().getArmadaById(armadaId)
+            if (localArmada != null) {
+                val localUriStr = "data:$photoMimeType;base64," + android.util.Base64.encodeToString(photoBytes, android.util.Base64.NO_WRAP)
+                db.armadaDao().updateArmada(localArmada.copy(fotoService = localUriStr))
+                return UpdateFotoArmadaResult.Success(localUriStr, "Berhasil memperbarui foto gantungan service secara lokal.")
+            } else {
+                return UpdateFotoArmadaResult.Error("Armada tidak ditemukan di database lokal.")
+            }
         }
     }
 
