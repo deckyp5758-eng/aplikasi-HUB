@@ -56,12 +56,23 @@ class ApkUpdateManager(
         }
         try {
             _updateState.value = UpdateUiState.Checking
-            val response = apiService.checkUpdate()
+
+            // 1. Cek pembaruan langsung dari GitHub Releases API
+            val githubUpdate = checkGitHubRelease()
+            if (githubUpdate != null) {
+                _updateState.value = UpdateUiState.UpdateAvailable(githubUpdate)
+                return@withContext githubUpdate
+            }
+
+            // 2. Fallback cek dari backend Google Apps Script jika tersedia
+            val response = try {
+                apiService.checkUpdate()
+            } catch (e: Exception) {
+                null
+            }
+
             val currentVersionCode = BuildConfig.VERSION_CODE
-
-            Log.d("ApkUpdateManager", "Server VersionCode: ${response.latestVersionCode}, Current: $currentVersionCode")
-
-            if (response.success && response.latestVersionCode != null && response.latestVersionCode > currentVersionCode) {
+            if (response != null && response.success && response.latestVersionCode != null && response.latestVersionCode > currentVersionCode) {
                 _updateState.value = UpdateUiState.UpdateAvailable(response)
                 response
             } else {
@@ -72,6 +83,69 @@ class ApkUpdateManager(
             Log.e("ApkUpdateManager", "Check update failed: ${e.message}", e)
             _updateState.value = UpdateUiState.Idle
             null
+        }
+    }
+
+    private suspend fun checkGitHubRelease(): AppUpdateResponse? {
+        return try {
+            val ghRelease = apiService.getLatestGitHubRelease()
+            val tagName = ghRelease.tag_name ?: return null
+            val cleanRemoteVersion = tagName.removePrefix("v").removePrefix("V").trim()
+            val currentVersionName = BuildConfig.VERSION_NAME
+
+            val isNewer = isNewerSemanticVersion(cleanRemoteVersion, currentVersionName)
+            if (!isNewer) {
+                Log.d("ApkUpdateManager", "GitHub release $cleanRemoteVersion is not newer than current $currentVersionName")
+                return null
+            }
+
+            // Cari asset APK
+            val apkAsset = ghRelease.assets?.firstOrNull { asset ->
+                asset.name?.endsWith(".apk", ignoreCase = true) == true ||
+                asset.browser_download_url?.endsWith(".apk", ignoreCase = true) == true
+            }
+
+            val downloadUrl = apkAsset?.browser_download_url ?: return null
+            val changelog = ghRelease.body ?: ghRelease.name ?: "Pembaruan versi $cleanRemoteVersion"
+
+            AppUpdateResponse(
+                success = true,
+                latestVersionCode = extractVersionCode(cleanRemoteVersion),
+                latestVersionName = cleanRemoteVersion,
+                apkDownloadUrl = downloadUrl,
+                forceUpdate = false,
+                changelog = changelog
+            )
+        } catch (e: Exception) {
+            Log.w("ApkUpdateManager", "GitHub release check failed: ${e.message}")
+            null
+        }
+    }
+
+    companion object {
+        fun isNewerSemanticVersion(remoteVersion: String, currentVersion: String): Boolean {
+            val cleanRemote = remoteVersion.removePrefix("v").removePrefix("V").trim()
+            val cleanCurrent = currentVersion.removePrefix("v").removePrefix("V").trim()
+
+            val remoteParts = cleanRemote.split(".").mapNotNull { it.toIntOrNull() }
+            val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
+
+            val maxLen = maxOf(remoteParts.size, currentParts.size)
+            for (i in 0 until maxLen) {
+                val r = remoteParts.getOrElse(i) { 0 }
+                val c = currentParts.getOrElse(i) { 0 }
+                if (r > c) return true
+                if (r < c) return false
+            }
+            return false
+        }
+
+        fun extractVersionCode(versionName: String): Int {
+            val parts = versionName.removePrefix("v").removePrefix("V").split(".")
+            val major = parts.getOrNull(0)?.toIntOrNull() ?: 1
+            val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0
+            val patch = parts.getOrNull(2)?.toIntOrNull() ?: 0
+            return (major * 10000) + (minor * 100) + patch
         }
     }
 

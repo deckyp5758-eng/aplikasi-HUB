@@ -4,6 +4,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Url
 
 interface ApiService {
     @GET("exec")
@@ -180,6 +181,11 @@ interface ApiService {
     suspend fun checkUpdate(
         @Query("action") action: String = "checkUpdate"
     ): AppUpdateResponse
+
+    @GET
+    suspend fun getLatestGitHubRelease(
+        @Url url: String = "https://api.github.com/repos/deckyp5758-eng/aplikasi-HUB/releases/latest"
+    ): GitHubReleaseResponse
 }
 
 data class AiKnowledgeApiResponse(
@@ -557,5 +563,22 @@ data class AppUpdateResponse(
     val forceUpdate: Boolean? = false,
     val changelog: String? = null
 )
+
+data class GitHubReleaseResponse(
+    val tag_name: String? = null,
+    val name: String? = null,
+    val body: String? = null,
+    val prerelease: Boolean? = false,
+    val draft: Boolean? = false,
+    val assets: List<GitHubReleaseAsset>? = null
+)
+
+data class GitHubReleaseAsset(
+    val name: String? = null,
+    val size: Long? = null,
+    val browser_download_url: String? = null,
+    val content_type: String? = null
+)
+
 
 

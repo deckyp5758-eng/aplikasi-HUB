@@ -135,5 +135,36 @@ class ExampleRobolectricTest {
     assertEquals("https://example.com/truck.jpg", entity.fotoTruck)
     assertEquals("https://example.com/service.jpg", entity.fotoService)
   }
+
+  @Test
+  fun `test GitHub release semantic version comparison`() {
+    assertTrue(com.example.utils.ApkUpdateManager.isNewerSemanticVersion("v1.2.2", "1.2.1"))
+    assertTrue(com.example.utils.ApkUpdateManager.isNewerSemanticVersion("1.3.0", "1.2.1"))
+    assertTrue(com.example.utils.ApkUpdateManager.isNewerSemanticVersion("2.0.0", "1.2.1"))
+    assertFalse(com.example.utils.ApkUpdateManager.isNewerSemanticVersion("1.2.1", "1.2.1"))
+    assertFalse(com.example.utils.ApkUpdateManager.isNewerSemanticVersion("v1.2.0", "1.2.1"))
+    assertFalse(com.example.utils.ApkUpdateManager.isNewerSemanticVersion("1.1.9", "1.2.1"))
+  }
+
+  @Test
+  fun `test GitHub release model and asset detection`() {
+    val release = com.example.data.GitHubReleaseResponse(
+      tag_name = "v1.2.2",
+      name = "Fleet Tracker v1.2.2",
+      body = "Pembaruan sistem odometer dan foto service",
+      assets = listOf(
+        com.example.data.GitHubReleaseAsset(
+          name = "app-debug.apk",
+          size = 15000000L,
+          browser_download_url = "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.2.2/app-debug.apk"
+        )
+      )
+    )
+
+    assertEquals("v1.2.2", release.tag_name)
+    val apkAsset = release.assets?.firstOrNull { it.name?.endsWith(".apk") == true }
+    assertNotNull(apkAsset)
+    assertEquals("https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.2.2/app-debug.apk", apkAsset?.browser_download_url)
+  }
 }
 
