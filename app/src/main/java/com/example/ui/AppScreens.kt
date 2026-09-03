@@ -3378,12 +3378,22 @@ fun ServiceScreen(viewModel: FleetViewModel) {
     var catatanInput by remember { mutableStateOf("") }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
+    // Odometer Correction state
+    var modeKoreksiChecked by remember { mutableStateOf(false) }
+    var alasanKoreksiInput by remember { mutableStateOf("") }
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var pendingKmVal by remember { mutableStateOf(0) }
+    var pendingArmadaId by remember { mutableStateOf("") }
+    var pendingCatatan by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(serviceSuccessMessage) {
         serviceSuccessMessage?.let { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
             selectedArmadaId = ""
             kmServisInput = ""
             catatanInput = ""
+            modeKoreksiChecked = false
+            alasanKoreksiInput = ""
             viewModel.clearServiceMessages()
         }
     }
@@ -3393,6 +3403,40 @@ fun ServiceScreen(viewModel: FleetViewModel) {
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
             viewModel.clearServiceMessages()
         }
+    }
+
+    if (showConfirmDialog) {
+        val matchingArmada = armadaList.find { it.armadaId == pendingArmadaId }
+        val kmLama = matchingArmada?.kmSaatIni ?: 0
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = { Text("Konfirmasi Koreksi Odometer", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Anda akan mengubah KM dari $kmLama menjadi $pendingKmVal. Perubahan ini akan dicatat sebagai koreksi odometer. Lanjutkan?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirmDialog = false
+                        viewModel.submitServiceLog(
+                            armadaId = pendingArmadaId,
+                            kmServis = pendingKmVal,
+                            catatan = pendingCatatan,
+                            allowLowerKm = true,
+                            correctionReason = alasanKoreksiInput.trim()
+                        )
+                    },
+                    modifier = Modifier.testTag("confirm_correction_button")
+                ) {
+                    Text("Lanjutkan")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
     }
 
     LazyColumn(
@@ -3528,6 +3572,49 @@ fun ServiceScreen(viewModel: FleetViewModel) {
                         singleLine = true
                     )
 
+                    // Mode Koreksi Odometer Option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("mode_koreksi_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Mode Koreksi Odometer",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                "Aktifkan jika KM lebih rendah dari KM saat ini (koreksi data / ganti odometer).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = modeKoreksiChecked,
+                            onCheckedChange = { modeKoreksiChecked = it },
+                            modifier = Modifier.testTag("mode_koreksi_switch")
+                        )
+                    }
+
+                    if (modeKoreksiChecked) {
+                        OutlinedTextField(
+                            value = alasanKoreksiInput,
+                            onValueChange = { alasanKoreksiInput = it },
+                            label = { Text("Alasan Koreksi Odometer (Wajib, min 10 karakter)") },
+                            placeholder = { Text("e.g. Salah input data sebelumnya / Penggantian unit odometer baru") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = "Info Icon") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("alasan_koreksi_input_field"),
+                            shape = RoundedCornerShape(12.dp),
+                            minLines = 2,
+                            maxLines = 4
+                        )
+                    }
+
                     // 3. Catatan Servis / Penggantian Part
                     OutlinedTextField(
                         value = catatanInput,
@@ -3559,14 +3646,27 @@ fun ServiceScreen(viewModel: FleetViewModel) {
                             }
                             val matchingArmada = armadaList.find { it.armadaId == selectedArmadaId }
                             if (matchingArmada != null && kmVal < matchingArmada.kmSaatIni) {
-                                android.widget.Toast.makeText(context, "KM Servis tidak boleh kurang dari KM saat ini (${matchingArmada.kmSaatIni})!", android.widget.Toast.LENGTH_LONG).show()
-                                return@Button
+                                if (!modeKoreksiChecked) {
+                                    android.widget.Toast.makeText(context, "KM lebih rendah dari KM saat ini. Aktifkan Mode Koreksi Odometer hanya jika ini adalah koreksi data yang sah.", android.widget.Toast.LENGTH_LONG).show()
+                                    return@Button
+                                } else {
+                                    if (alasanKoreksiInput.trim().length < 10) {
+                                        android.widget.Toast.makeText(context, "Alasan koreksi odometer wajib diisi minimal 10 karakter!", android.widget.Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+                                    pendingKmVal = kmVal
+                                    pendingArmadaId = selectedArmadaId
+                                    pendingCatatan = catatanInput.ifBlank { null }
+                                    showConfirmDialog = true
+                                    return@Button
+                                }
                             }
 
                             viewModel.submitServiceLog(
                                 armadaId = selectedArmadaId,
                                 kmServis = kmVal,
-                                catatan = catatanInput.ifBlank { null }
+                                catatan = catatanInput.ifBlank { null },
+                                allowLowerKm = false
                             )
                         },
                         enabled = !serviceLoading,

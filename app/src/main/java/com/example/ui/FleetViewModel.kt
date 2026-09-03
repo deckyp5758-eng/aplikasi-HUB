@@ -536,13 +536,19 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         _serviceErrorMessage.value = null
     }
 
-    fun submitServiceLog(armadaId: String, kmServis: Int, catatan: String?) {
+    fun submitServiceLog(
+        armadaId: String,
+        kmServis: Int,
+        catatan: String?,
+        allowLowerKm: Boolean = false,
+        correctionReason: String? = null
+    ) {
         viewModelScope.launch {
             _serviceLoading.value = true
             _serviceSuccessMessage.value = null
             _serviceErrorMessage.value = null
 
-            val result = repository.submitServiceLog(armadaId, kmServis, catatan)
+            val result = repository.submitServiceLog(armadaId, kmServis, catatan, allowLowerKm, correctionReason)
             when (result) {
                 is SubmitServiceResult.Success -> {
                     _serviceSuccessMessage.value = result.message
@@ -550,8 +556,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                     // Trigger dynamic local notification
                     NotificationHelper.sendNotification(
                         getApplication(),
-                        "Catatan Servis Disimpan",
-                        "Catatan servis unit $armadaId berhasil disimpan pada $kmServis KM."
+                        if (allowLowerKm) "Koreksi Odometer Disimpan" else "Catatan Servis Disimpan",
+                        if (allowLowerKm) "Koreksi odometer unit $armadaId berhasil disimpan ke $kmServis KM." else "Catatan servis unit $armadaId berhasil disimpan pada $kmServis KM."
                     )
 
                     refreshMetadata()

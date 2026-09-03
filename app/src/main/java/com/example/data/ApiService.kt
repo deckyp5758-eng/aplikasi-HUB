@@ -380,7 +380,11 @@ data class ServiceLogApiRequest(
     val spreadsheetId: String? = null,
     val armadaId: String,
     val kmServis: Int,
-    val catatan: String?
+    val catatan: String?,
+    val allowLowerKm: Boolean? = null,
+    val correctionReason: String? = null,
+    val correctionType: String? = null,
+    val driverName: String? = null
 )
 
 data class ServiceLogApiResponse(

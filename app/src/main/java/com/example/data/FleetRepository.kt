@@ -1184,12 +1184,15 @@ class FleetRepository(
     suspend fun submitServiceLog(
         armadaId: String,
         kmServis: Int,
-        catatan: String?
+        catatan: String?,
+        allowLowerKm: Boolean = false,
+        correctionReason: String? = null
     ): SubmitServiceResult {
         // Otomatis hapus catatan/keluhan armada saat service berkala dilakukan
         db.catatanDriverDao().clearCatatanByArmadaId(armadaId)
 
         val isSheetsMode = prefs.isGoogleSheetsMode
+        val driverName = prefs.loggedInDriverName.ifBlank { "Driver" }
         if (isSheetsMode) {
             return try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
@@ -1198,7 +1201,11 @@ class FleetRepository(
                         spreadsheetId = SPREADSHEET_ARMADA,
                         armadaId = armadaId,
                         kmServis = kmServis,
-                        catatan = catatan
+                        catatan = catatan,
+                        allowLowerKm = allowLowerKm,
+                        correctionReason = correctionReason,
+                        correctionType = if (allowLowerKm) "ODOMETER_CORRECTION" else null,
+                        driverName = driverName
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
                     sheetId = GID_ARMADA
@@ -1219,7 +1226,8 @@ class FleetRepository(
                         )
                         db.armadaDao().updateArmada(updated)
                     }
-                    SubmitServiceResult.Success(response.message ?: "Data servis berhasil diperbarui. Catatan/keluhan driver otomatis terhapus.")
+                    val defaultMsg = if (allowLowerKm) "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." else "Data servis berhasil diperbarui. Catatan/keluhan driver otomatis terhapus."
+                    SubmitServiceResult.Success(response.message ?: defaultMsg)
                 } else {
                     SubmitServiceResult.Error(response.message ?: "Gagal memperbarui data servis.")
                 }
@@ -1230,6 +1238,12 @@ class FleetRepository(
             // Local Mode
             val localArmada = db.armadaDao().getArmadaById(armadaId)
             if (localArmada != null) {
+                if (!allowLowerKm && kmServis < localArmada.kmSaatIni) {
+                    return SubmitServiceResult.Error("KM lebih rendah dari KM saat ini. Aktifkan Mode Koreksi Odometer hanya jika ini adalah koreksi data yang sah.")
+                }
+                if (allowLowerKm && (correctionReason.isNullOrBlank() || correctionReason.trim().length < 10)) {
+                    return SubmitServiceResult.Error("Alasan koreksi odometer wajib diisi minimal 10 karakter!")
+                }
                 val interval = localArmada.intervalService
                 val nextService = kmServis + interval
                 val updated = localArmada.copy(
@@ -1241,7 +1255,8 @@ class FleetRepository(
                     catattan = "" // Otomatis terhapus setelah service berkala
                 )
                 db.armadaDao().updateArmada(updated)
-                return SubmitServiceResult.Success("Data servis ${armadaId} berhasil diperbarui secara lokal. Status armada kembali AMAN dan catatan driver telah dibersihkan!")
+                val msg = if (allowLowerKm) "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." else "Data servis ${armadaId} berhasil diperbarui secara lokal. Status armada kembali AMAN!"
+                return SubmitServiceResult.Success(msg)
             } else {
                 return SubmitServiceResult.Error("Armada tidak ditemukan.")
             }

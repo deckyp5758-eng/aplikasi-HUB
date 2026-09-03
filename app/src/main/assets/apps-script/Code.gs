@@ -979,6 +979,8 @@ function submitService(contents, ss, sheetMap) {
   if (!sheetMap) sheetMap = getSheetMap(ss);
   var armadaId = String(serviceData.armadaId || "").trim().toUpperCase();
   var kmServis = Number(serviceData.kmServis || serviceData.kmServiceTerakhir || serviceData.kmSaatIni || 0);
+  var allowLowerKm = serviceData.allowLowerKm === true || serviceData.allowLowerKm === "true";
+  var correctionReason = String(serviceData.correctionReason || "").trim();
 
   if (!armadaId) return { success: false, message: "Validasi Gagal: ID Armada wajib diisi!" };
   if (isNaN(kmServis) || kmServis <= 0) return { success: false, message: "Validasi Gagal: Angka KM Service tidak valid!" };
@@ -988,34 +990,94 @@ function submitService(contents, ss, sheetMap) {
     lock.waitLock(10000);
 
     var armadaSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
-    if (armadaSheet) {
-      var aRows = armadaSheet.getDataRange().getValues();
-      for (var i = 1; i < aRows.length; i++) {
-        var rowId = String(aRows[i][0] || "").trim().toUpperCase();
-        var rowPol = String(aRows[i][1] || "").trim().toUpperCase();
-        if (rowId === armadaId || rowPol === armadaId) {
-          var intervalService = Number(aRows[i][4]) || 5000;
-          var kmServiceBerikutnya = kmServis + intervalService;
-          var sisaKm = kmServiceBerikutnya - kmServis;
+    if (!armadaSheet) return { success: false, message: "Sheet Armada tidak ditemukan!" };
 
-          var serviceSlice = armadaSheet.getRange(i + 1, 3, 1, 6).getValues();
-          serviceSlice[0][0] = kmServis; // Col C: KM SAAT INI
-          serviceSlice[0][1] = kmServis; // Col D: KM SERVICE TERAKHIR
-          serviceSlice[0][3] = kmServiceBerikutnya; // Col F: KM SERVICE BERIKUTNYA
-          serviceSlice[0][4] = sisaKm; // Col G: SISA KM
-          serviceSlice[0][5] = "🟢 AMAN"; // Col H: STATUS
-          
-          batchWriteRow(armadaSheet, i + 1, 3, serviceSlice[0]);
+    var aRows = armadaSheet.getDataRange().getValues();
+    var foundIdx = -1;
+    var currentKm = 0;
+    var noPolisi = "";
+    var intervalService = 5000;
 
-          if (serviceData.catatan !== undefined) {
-            batchWriteRow(armadaSheet, i + 1, 11, [serviceData.catatan || ""]);
-          }
-          break;
-        }
+    for (var i = 1; i < aRows.length; i++) {
+      var rowId = String(aRows[i][0] || "").trim().toUpperCase();
+      var rowPol = String(aRows[i][1] || "").trim().toUpperCase();
+      if (rowId === armadaId || rowPol === armadaId) {
+        foundIdx = i;
+        currentKm = Number(aRows[i][2]) || 0; // Col C: KM Saat Ini
+        noPolisi = String(aRows[i][1] || "").trim();
+        intervalService = Number(aRows[i][4]) || 5000;
+        break;
       }
     }
 
-    return { success: true, message: "Data servis " + armadaId + " berhasil diperbarui. Status armada kembali AMAN!" };
+    if (foundIdx === -1) {
+      return { success: false, message: "Armada tidak ditemukan dengan ID: " + armadaId };
+    }
+
+    // Validation for lower KM
+    if (kmServis < currentKm) {
+      if (!allowLowerKm) {
+        return { success: false, message: "KM lebih rendah dari KM saat ini. Aktifkan Mode Koreksi Odometer hanya jika ini adalah koreksi data yang sah." };
+      }
+      if (correctionReason.length < 10) {
+        return { success: false, message: "Alasan koreksi odometer wajib diisi minimal 10 karakter!" };
+      }
+
+      // Log to KOREKSI KM sheet
+      var koreksiSheet = ss.getSheetByName("KOREKSI KM");
+      if (!koreksiSheet) {
+        koreksiSheet = ss.insertSheet("KOREKSI KM");
+        koreksiSheet.appendRow([
+          "Timestamp",
+          "ID Koreksi",
+          "ID Armada",
+          "No Polisi",
+          "KM Sebelum",
+          "KM Sesudah",
+          "Selisih KM",
+          "Alasan Koreksi",
+          "ID/Nama Driver",
+          "Jenis Koreksi",
+          "Sumber"
+        ]);
+      }
+
+      var timestamp = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+      var idKoreksi = "CORR_" + new Date().getTime();
+      var driverInfo = String(serviceData.driverName || serviceData.driver || "Driver").trim();
+      koreksiSheet.appendRow([
+        timestamp,
+        idKoreksi,
+        armadaId,
+        noPolisi,
+        currentKm,
+        kmServis,
+        kmServis - currentKm,
+        correctionReason,
+        driverInfo,
+        "ODOMETER_CORRECTION",
+        "Android App H033"
+      ]);
+    }
+
+    var kmServiceBerikutnya = kmServis + intervalService;
+    var sisaKm = kmServiceBerikutnya - kmServis;
+
+    var serviceSlice = armadaSheet.getRange(foundIdx + 1, 3, 1, 6).getValues();
+    serviceSlice[0][0] = kmServis; // Col C: KM SAAT INI
+    serviceSlice[0][1] = kmServis; // Col D: KM SERVICE TERAKHIR
+    serviceSlice[0][3] = kmServiceBerikutnya; // Col F: KM SERVICE BERIKUTNYA
+    serviceSlice[0][4] = sisaKm; // Col G: SISA KM
+    serviceSlice[0][5] = "🟢 AMAN"; // Col H: STATUS
+
+    batchWriteRow(armadaSheet, foundIdx + 1, 3, serviceSlice[0]);
+
+    if (serviceData.catatan !== undefined) {
+      batchWriteRow(armadaSheet, foundIdx + 1, 11, [serviceData.catatan || ""]);
+    }
+
+    var successMsg = allowLowerKm ? "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." : ("Data servis " + armadaId + " berhasil diperbarui. Status armada kembali AMAN!");
+    return { success: true, message: successMsg };
   } catch(e) {
     return { success: false, message: "Gagal menyimpan service log: " + e.toString() };
   } finally {
