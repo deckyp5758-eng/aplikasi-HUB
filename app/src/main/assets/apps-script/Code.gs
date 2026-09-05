@@ -141,11 +141,11 @@ function doGet(e) {
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
-        latestVersionCode: 1,
-        latestVersionName: "1.0.0",
-        apkDownloadUrl: "",
+        latestVersionCode: 6,
+        latestVersionName: "1.3.0",
+        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.3.0/H033-debug-v1.3.0-code6.apk",
         forceUpdate: false,
-        changelog: "Pembaruan sistem validasi login driver dan peningkatan stabilitas aplikasi."
+        changelog: "Pembaruan koreksi odometer, validasi audit, dan peningkatan sinkronisasi aplikasi H033."
       });
     } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
       return jsonResponse(setupAllSheets(ss));

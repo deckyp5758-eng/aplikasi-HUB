@@ -49,11 +49,8 @@ class ApkUpdateManager(
     private var downloadId: Long = -1L
 
     suspend fun checkForUpdates(): AppUpdateResponse? = withContext(Dispatchers.IO) {
-        // Debug APK tidak boleh memaksa unduhan dari URL release produksi.
-        if (BuildConfig.DEBUG) {
-            _updateState.value = UpdateUiState.Idle
-            return@withContext null
-        }
+        // Debug APK diizinkan memeriksa update untuk pengujian distribusi H033.
+        // URL release tetap harus berasal dari GitHub Release publik dan signing key harus kompatibel.
         try {
             _updateState.value = UpdateUiState.Checking
 
