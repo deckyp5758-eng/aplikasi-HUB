@@ -141,11 +141,11 @@ function doGet(e) {
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
-        latestVersionCode: 6,
-        latestVersionName: "1.3.0",
-        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.3.0/H033-debug-v1.3.0-code6.apk",
+        latestVersionCode: 5,
+        latestVersionName: "1.2.1",
+        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.2.1/H033-debug-v1.2.1-code5.apk",
         forceUpdate: false,
-        changelog: "Pembaruan koreksi odometer, validasi audit, dan peningkatan sinkronisasi aplikasi H033."
+        changelog: "Rilis foto service dan peningkatan sinkronisasi aplikasi H033."
       });
     } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
       return jsonResponse(setupAllSheets(ss));
