@@ -679,10 +679,15 @@ fun FormScreen(viewModel: FleetViewModel) {
     val kmInput by viewModel.kmInput.collectAsStateWithLifecycle()
     val catatanInput by viewModel.catatanInput.collectAsStateWithLifecycle()
     val selectedPhoto by viewModel.selectedPhoto.collectAsStateWithLifecycle()
+    val notaBbmState by viewModel.notaBbmState.collectAsStateWithLifecycle()
+    val notaBbmStatus by viewModel.notaBbmStatus.collectAsStateWithLifecycle()
     val isLoading by viewModel.submitLoading.collectAsStateWithLifecycle()
     val error by viewModel.submitError.collectAsStateWithLifecycle()
     val ocrLoading by viewModel.ocrLoading.collectAsStateWithLifecycle()
     val ocrSuccessMessage by viewModel.ocrSuccessMessage.collectAsStateWithLifecycle()
+    val allLogs by viewModel.logs.collectAsStateWithLifecycle()
+    var formFullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var formShowAllLogs by remember { mutableStateOf(false) }
 
     LaunchedEffect(ocrSuccessMessage) {
         ocrSuccessMessage?.let { msg ->
@@ -731,6 +736,70 @@ fun FormScreen(viewModel: FleetViewModel) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    // Nota BBM Launchers (Camera & Document/Image Picker)
+    val notaCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap: Bitmap? ->
+        if (bitmap != null) {
+            val fileName = "NOTA_BBM_${System.currentTimeMillis()}.jpg"
+            viewModel.setNotaBbmImage(
+                uri = null,
+                bitmap = bitmap,
+                fileName = fileName,
+                mimeType = "image/jpeg",
+                size = 0L
+            )
+        }
+    }
+
+    val notaCameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                notaCameraLauncher.launch(null)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            android.widget.Toast.makeText(
+                context,
+                "Izin kamera diperlukan untuk memotret nota BBM.",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val notaFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val fileName = getFileNameFromUri(context, uri)
+                val fileSize = getFileSizeFromUri(context, uri)
+                if (fileSize > 8 * 1024 * 1024) {
+                    android.widget.Toast.makeText(context, "Ukuran file melebihi 8 MB! Silakan pilih berkas lebih kecil.", android.widget.Toast.LENGTH_LONG).show()
+                    return@rememberLauncherForActivityResult
+                }
+                val mimeType = context.contentResolver.getType(uri) ?: if (fileName.endsWith(".pdf", ignoreCase = true)) "application/pdf" else "image/jpeg"
+                if (mimeType == "application/pdf" || fileName.endsWith(".pdf", ignoreCase = true)) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes != null) {
+                        viewModel.setNotaBbmPdf(uri, bytes, fileName, if (fileSize > 0) fileSize else bytes.size.toLong())
+                    }
+                } else {
+                    val bitmap = ImageCompressor.decodeSampledBitmapFromUri(context, uri, maxDimension = 1280)
+                    if (bitmap != null) {
+                        viewModel.setNotaBbmImage(uri, bitmap, fileName, mimeType, fileSize)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                android.widget.Toast.makeText(context, "Gagal membuka berkas nota: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -953,6 +1022,301 @@ fun FormScreen(viewModel: FleetViewModel) {
                         }
                     }
 
+                    // Catatan Input (Opsional)
+                    OutlinedTextField(
+                        value = catatanInput,
+                        onValueChange = { viewModel.setCatatanInput(it) },
+                        label = { Text("Catatan / Keterangan (Opsional)") },
+                        leadingIcon = { Icon(Icons.Default.EditNote, contentDescription = "Catatan") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("catatan_input_field"),
+                        shape = RoundedCornerShape(12.dp),
+                        maxLines = 3
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    // Nota Isi BBM (Opsional)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("nota_bbm_section"),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.ReceiptLong,
+                                    contentDescription = "Nota BBM",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Nota Isi BBM (Opsional)",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = "JPG/PNG/PDF (Maks 8MB)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (notaBbmState == null) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.UploadFile,
+                                        contentDescription = "Upload Nota",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                    Text(
+                                        text = "Belum ada nota BBM dipilih (opsional). Anda dapat melampirkan foto struk BBM atau dokumen PDF.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val hasPermission = ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    Manifest.permission.CAMERA
+                                                ) == PackageManager.PERMISSION_GRANTED
+                                                if (hasPermission) {
+                                                    try {
+                                                        notaCameraLauncher.launch(null)
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                    }
+                                                } else {
+                                                    notaCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(44.dp)
+                                                .testTag("nota_camera_button"),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Icon(Icons.Default.PhotoCamera, contentDescription = "Foto Nota", modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Foto Nota", style = MaterialTheme.typography.labelLarge)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                try {
+                                                    notaFilePickerLauncher.launch(arrayOf("image/jpeg", "image/png", "image/jpg", "application/pdf"))
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(44.dp)
+                                                .testTag("nota_file_button"),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Icon(Icons.Default.AttachFile, contentDescription = "Pilih Berkas", modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Pilih Berkas", style = MaterialTheme.typography.labelLarge)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val currentNota = notaBbmState!!
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("nota_preview_card"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (currentNota.isPdf) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.errorContainer,
+                                                modifier = Modifier.size(56.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        Icons.Default.PictureAsPdf,
+                                                        contentDescription = "Dokumen PDF",
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                                        modifier = Modifier.size(32.dp)
+                                                    )
+                                                }
+                                            }
+                                        } else if (currentNota.bitmap != null) {
+                                            Image(
+                                                bitmap = currentNota.bitmap.asImageBitmap(),
+                                                contentDescription = "Thumbnail Nota BBM",
+                                                modifier = Modifier
+                                                    .size(56.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                modifier = Modifier.size(56.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        Icons.Default.Receipt,
+                                                        contentDescription = "Nota BBM",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(32.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (currentNota.isPdf) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
+                                                ) {
+                                                    Text(
+                                                        text = if (currentNota.isPdf) "PDF" else "GAMBAR",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                        color = if (currentNota.isPdf) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                if (currentNota.fileSize > 0) {
+                                                    Text(
+                                                        text = formatFileSize(currentNota.fileSize),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+
+                                            Text(
+                                                text = currentNota.fileName,
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.CheckCircle,
+                                                    contentDescription = "Ready",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Text(
+                                                    text = notaBbmStatus ?: "Nota BBM siap diunggah.",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                try {
+                                                    notaFilePickerLauncher.launch(arrayOf("image/jpeg", "image/png", "image/jpg", "application/pdf"))
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(40.dp)
+                                                .testTag("nota_change_button"),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Icon(Icons.Default.Refresh, contentDescription = "Ganti", modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Ganti File", style = MaterialTheme.typography.labelMedium)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { viewModel.clearNotaBbm() },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(40.dp)
+                                                .testTag("nota_delete_button"),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Icon(Icons.Default.DeleteOutline, contentDescription = "Hapus", modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Hapus File", style = MaterialTheme.typography.labelMedium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Error text inside card
                     error?.let { err ->
                         Surface(
@@ -1012,6 +1376,336 @@ fun FormScreen(viewModel: FleetViewModel) {
                 }
             }
         }
+
+        // Section: Riwayat 7 Hari Terakhir
+        val relevantLogs = if (selectedArmadaId.isNotEmpty()) {
+            allLogs.filter { it.armadaId.trim().uppercase() == selectedArmadaId.trim().uppercase() }
+        } else {
+            allLogs
+        }
+
+        if (relevantLogs.isNotEmpty()) {
+            val displayedFormLogs = if (formShowAllLogs) relevantLogs else relevantLogs.take(7)
+            val formatKm = { num: Int ->
+                String.format("%,d", num).replace(',', '.')
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.DateRange,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = if (selectedArmadaId.isNotEmpty()) "Riwayat 7 Hari ($selectedArmadaId)" else "Riwayat 7 Hari Terakhir",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                if (relevantLogs.size > 7 && !formShowAllLogs) {
+                                    Text(
+                                        text = "Menampilkan 7 hari terakhir dari ${relevantLogs.size} data",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (relevantLogs.size > 7) {
+                                TextButton(
+                                    onClick = { formShowAllLogs = !formShowAllLogs },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (formShowAllLogs) "7 Hari" else "Lihat Semua",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                }
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            displayedFormLogs.forEach { log ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = "${log.armadaId} • ${log.tanggal}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Text(
+                                                    text = "Driver: ${log.namaDriver}",
+                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${formatKm(log.kmTerdeteksi)} KM",
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+
+                                        if (log.catatan.isNotEmpty()) {
+                                            Text(
+                                                text = "Catatan: ${log.catatan}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        val hasOdoPhoto = log.linkFoto.isNotEmpty() && log.linkFoto.startsWith("http")
+                                        val hasNotaBbm = log.notaBbmUrl.isNotEmpty() && log.notaBbmUrl.startsWith("http")
+
+                                        if (hasOdoPhoto || hasNotaBbm) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                // Kolom Kiri: Foto Odometer
+                                                if (hasOdoPhoto) {
+                                                    val directOdoUrl = getDirectDriveImageUrl(log.linkFoto)
+                                                    Card(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .height(120.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable { formFullScreenImageUrl = directOdoUrl },
+                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Box(modifier = Modifier.fillMaxSize()) {
+                                                            AsyncImage(
+                                                                model = directOdoUrl,
+                                                                contentDescription = "Foto Odometer",
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentScale = ContentScale.Crop
+                                                            )
+                                                            Surface(
+                                                                color = Color.Black.copy(alpha = 0.65f),
+                                                                shape = RoundedCornerShape(bottomEnd = 6.dp),
+                                                                modifier = Modifier.align(Alignment.TopStart)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Default.Speed,
+                                                                        contentDescription = null,
+                                                                        tint = Color.White,
+                                                                        modifier = Modifier.size(11.dp)
+                                                                    )
+                                                                    Text(
+                                                                        "Odometer",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                                                        color = Color.White
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .height(120.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                            verticalArrangement = Arrangement.Center
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Default.Speed,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                                modifier = Modifier.size(22.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                "Tanpa Foto Odo",
+                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // Kolom Kanan: Foto / PDF Nota BBM
+                                                if (hasNotaBbm) {
+                                                    val directNotaUrl = getDirectDriveImageUrl(log.notaBbmUrl)
+                                                    val isPdf = log.notaBbmUrl.lowercase().contains(".pdf") || log.notaBbmUrl.lowercase().contains("application%2fpdf")
+                                                    Card(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .height(120.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                if (isPdf) {
+                                                                    try {
+                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(log.notaBbmUrl))
+                                                                        context.startActivity(intent)
+                                                                    } catch (e: Exception) {
+                                                                        e.printStackTrace()
+                                                                    }
+                                                                } else {
+                                                                    formFullScreenImageUrl = directNotaUrl
+                                                                }
+                                                            },
+                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Box(modifier = Modifier.fillMaxSize()) {
+                                                            if (isPdf) {
+                                                                Column(
+                                                                    modifier = Modifier
+                                                                        .fillMaxSize()
+                                                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
+                                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                                    verticalArrangement = Arrangement.Center
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Default.PictureAsPdf,
+                                                                        contentDescription = "PDF Nota",
+                                                                        tint = MaterialTheme.colorScheme.error,
+                                                                        modifier = Modifier.size(28.dp)
+                                                                    )
+                                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                                    Text(
+                                                                        "Dokumen PDF",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                                                                        color = MaterialTheme.colorScheme.error
+                                                                    )
+                                                                    Text(
+                                                                        "Ketuk untuk buka",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    )
+                                                                }
+                                                            } else {
+                                                                AsyncImage(
+                                                                    model = directNotaUrl,
+                                                                    contentDescription = "Nota BBM",
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop
+                                                                )
+                                                            }
+                                                            Surface(
+                                                                color = Color(0xFF1E88E5).copy(alpha = 0.85f),
+                                                                shape = RoundedCornerShape(bottomEnd = 6.dp),
+                                                                modifier = Modifier.align(Alignment.TopStart)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Default.LocalGasStation,
+                                                                        contentDescription = null,
+                                                                        tint = Color.White,
+                                                                        modifier = Modifier.size(11.dp)
+                                                                    )
+                                                                    Text(
+                                                                        "Nota BBM",
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                                                        color = Color.White
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .height(120.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                            verticalArrangement = Arrangement.Center
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Default.ReceiptLong,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                                                modifier = Modifier.size(22.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                "Tanpa Nota BBM",
+                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (formFullScreenImageUrl != null) {
+        FullScreenImageDialog(
+            imageUrl = formFullScreenImageUrl!!,
+            onDismiss = { formFullScreenImageUrl = null }
+        )
     }
 }
 
@@ -1127,6 +1821,7 @@ fun DetailArmadaDialog(
         String.format("%,d", num).replace(',', '.')
     }
 
+    val context = LocalContext.current
     val imageLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
@@ -1145,6 +1840,7 @@ fun DetailArmadaDialog(
 
     var showEditBanDialog by remember { mutableStateOf<BanEntity?>(null) }
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var showAllLogs by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         var selectedTabState by remember { mutableStateOf(0) }
@@ -2005,13 +2701,40 @@ fun DetailArmadaDialog(
                         }
                         
                         val armadaLogs = logs.filter { it.armadaId.trim().uppercase() == armada.armadaId.trim().uppercase() }
+                        val displayedLogs = if (showAllLogs) armadaLogs else armadaLogs.take(7)
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = "Riwayat Log ${armada.armadaId}",
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Riwayat Log ${armada.armadaId}",
+                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (armadaLogs.isNotEmpty() && !showAllLogs && armadaLogs.size > 7) {
+                                            Text(
+                                                text = "Menampilkan 7 hari terakhir (${armadaLogs.size} total)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    if (armadaLogs.size > 7) {
+                                        TextButton(
+                                            onClick = { showAllLogs = !showAllLogs },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = if (showAllLogs) "7 Hari" else "Lihat Semua",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                                            )
+                                        }
+                                    }
+                                }
                                 
                                 if (armadaLogs.isEmpty()) {
                                     Card(
@@ -2028,14 +2751,15 @@ fun DetailArmadaDialog(
                                         )
                                     }
                                 } else {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        armadaLogs.forEach { log ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        displayedLogs.forEach { log ->
                                             Card(
                                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                                                shape = RoundedCornerShape(12.dp),
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Row(
                                                         modifier = Modifier.fillMaxWidth(),
                                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2045,11 +2769,17 @@ fun DetailArmadaDialog(
                                                             Text(log.tanggal, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                             Text("Driver: ${log.namaDriver}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                                                         }
-                                                        Text(
-                                                            "${formatKm(log.kmTerdeteksi)} KM",
-                                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                                            color = MaterialTheme.colorScheme.primary
-                                                        )
+                                                        Surface(
+                                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                                            shape = RoundedCornerShape(6.dp)
+                                                        ) {
+                                                            Text(
+                                                                "${formatKm(log.kmTerdeteksi)} KM",
+                                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                            )
+                                                        }
                                                     }
                                                     if (log.catatan.isNotEmpty()) {
                                                         Text(
@@ -2058,18 +2788,203 @@ fun DetailArmadaDialog(
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
                                                     }
-                                                    if (log.linkFoto.isNotEmpty() && log.linkFoto.startsWith("http")) {
-                                                        val directUrl = getDirectDriveImageUrl(log.linkFoto)
-                                                        AsyncImage(
-                                                            model = directUrl,
-                                                            contentDescription = "Odometer Odo Photo",
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .height(180.dp)
-                                                                .clip(RoundedCornerShape(8.dp))
-                                                                .clickable { fullScreenImageUrl = directUrl },
-                                                            contentScale = ContentScale.Crop
-                                                        )
+
+                                                    val hasOdoPhoto = log.linkFoto.isNotEmpty() && log.linkFoto.startsWith("http")
+                                                    val hasNotaBbm = log.notaBbmUrl.isNotEmpty() && log.notaBbmUrl.startsWith("http")
+
+                                                    if (hasOdoPhoto || hasNotaBbm) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
+                                                            // Kolom Kiri: Foto Odometer
+                                                            if (hasOdoPhoto) {
+                                                                val directOdoUrl = getDirectDriveImageUrl(log.linkFoto)
+                                                                Card(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .height(130.dp)
+                                                                        .clip(RoundedCornerShape(8.dp))
+                                                                        .clickable { fullScreenImageUrl = directOdoUrl },
+                                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                                                    shape = RoundedCornerShape(8.dp)
+                                                                ) {
+                                                                    Box(modifier = Modifier.fillMaxSize()) {
+                                                                        AsyncImage(
+                                                                            model = directOdoUrl,
+                                                                            contentDescription = "Foto Odometer",
+                                                                            modifier = Modifier.fillMaxSize(),
+                                                                            contentScale = ContentScale.Crop
+                                                                        )
+                                                                        Surface(
+                                                                            color = Color.Black.copy(alpha = 0.65f),
+                                                                            shape = RoundedCornerShape(bottomEnd = 6.dp),
+                                                                            modifier = Modifier.align(Alignment.TopStart)
+                                                                        ) {
+                                                                            Row(
+                                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                            ) {
+                                                                                Icon(
+                                                                                    Icons.Default.Speed,
+                                                                                    contentDescription = null,
+                                                                                    tint = Color.White,
+                                                                                    modifier = Modifier.size(11.dp)
+                                                                                )
+                                                                                Text(
+                                                                                    "Odometer",
+                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                                                                    color = Color.White
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                Surface(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .height(130.dp),
+                                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                                                ) {
+                                                                    Column(
+                                                                        modifier = Modifier.fillMaxSize(),
+                                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                                        verticalArrangement = Arrangement.Center
+                                                                    ) {
+                                                                        Icon(
+                                                                            Icons.Default.Speed,
+                                                                            contentDescription = null,
+                                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                                            modifier = Modifier.size(24.dp)
+                                                                        )
+                                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                                        Text(
+                                                                            "Tanpa Foto Odo",
+                                                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // Kolom Kanan: Nota BBM
+                                                            if (hasNotaBbm) {
+                                                                val directNotaUrl = getDirectDriveImageUrl(log.notaBbmUrl)
+                                                                val isPdf = log.notaBbmUrl.lowercase().contains(".pdf") || log.notaBbmUrl.lowercase().contains("application%2fpdf")
+                                                                Card(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .height(130.dp)
+                                                                        .clip(RoundedCornerShape(8.dp))
+                                                                        .clickable {
+                                                                            if (isPdf) {
+                                                                                try {
+                                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(log.notaBbmUrl))
+                                                                                    context.startActivity(intent)
+                                                                                } catch (e: Exception) {
+                                                                                    e.printStackTrace()
+                                                                                }
+                                                                            } else {
+                                                                                fullScreenImageUrl = directNotaUrl
+                                                                            }
+                                                                        },
+                                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                                                                    shape = RoundedCornerShape(8.dp)
+                                                                ) {
+                                                                    Box(modifier = Modifier.fillMaxSize()) {
+                                                                        if (isPdf) {
+                                                                            Column(
+                                                                                modifier = Modifier
+                                                                                    .fillMaxSize()
+                                                                                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
+                                                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                                                verticalArrangement = Arrangement.Center
+                                                                            ) {
+                                                                                Icon(
+                                                                                    Icons.Default.PictureAsPdf,
+                                                                                    contentDescription = "PDF Nota",
+                                                                                    tint = MaterialTheme.colorScheme.error,
+                                                                                    modifier = Modifier.size(32.dp)
+                                                                                )
+                                                                                Spacer(modifier = Modifier.height(4.dp))
+                                                                                Text(
+                                                                                    "Dokumen PDF",
+                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                                                                                    color = MaterialTheme.colorScheme.error
+                                                                                )
+                                                                                Text(
+                                                                                    "Ketuk untuk buka",
+                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                                )
+                                                                            }
+                                                                        } else {
+                                                                            AsyncImage(
+                                                                                model = directNotaUrl,
+                                                                                contentDescription = "Nota BBM",
+                                                                                modifier = Modifier.fillMaxSize(),
+                                                                                contentScale = ContentScale.Crop
+                                                                            )
+                                                                        }
+                                                                        Surface(
+                                                                            color = Color(0xFF1E88E5).copy(alpha = 0.85f),
+                                                                            shape = RoundedCornerShape(bottomEnd = 6.dp),
+                                                                            modifier = Modifier.align(Alignment.TopStart)
+                                                                        ) {
+                                                                            Row(
+                                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                            ) {
+                                                                                Icon(
+                                                                                    Icons.Default.LocalGasStation,
+                                                                                    contentDescription = null,
+                                                                                    tint = Color.White,
+                                                                                    modifier = Modifier.size(11.dp)
+                                                                                )
+                                                                                Text(
+                                                                                    "Nota BBM",
+                                                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                                                                    color = Color.White
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                Surface(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .height(130.dp),
+                                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                                                    shape = RoundedCornerShape(8.dp),
+                                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                                                                ) {
+                                                                    Column(
+                                                                        modifier = Modifier.fillMaxSize(),
+                                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                                        verticalArrangement = Arrangement.Center
+                                                                    ) {
+                                                                        Icon(
+                                                                            Icons.Default.ReceiptLong,
+                                                                            contentDescription = null,
+                                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                                                            modifier = Modifier.size(24.dp)
+                                                                        )
+                                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                                        Text(
+                                                                            "Tanpa Nota BBM",
+                                                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -2919,6 +3834,32 @@ fun SuccessDialog(data: SubmitSuccessData, onDismiss: () -> Unit) {
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                if (!data.notaBbmUrl.isNullOrEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = "Nota BBM Saved",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Nota BBM berhasil disimpan ke Google Drive.",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
 
                 // Service Threshold alert triggers warning dialog if sisa KM < 1000 KM
                 if (data.serviceAlert) {
@@ -5960,5 +6901,61 @@ fun PengajuanCard(item: PengajuanEntity) {
                 }
             }
         }
+    }
+}
+
+private fun getFileNameFromUri(context: Context, uri: Uri): String {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        try {
+            if (cursor != null && cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) {
+                    result = cursor.getString(index)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            cursor?.close()
+        }
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/') ?: -1
+        if (cut != -1 && result != null) {
+            result = result.substring(cut + 1)
+        }
+    }
+    return result ?: "nota_bbm_${System.currentTimeMillis()}"
+}
+
+private fun getFileSizeFromUri(context: Context, uri: Uri): Long {
+    var size = 0L
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        try {
+            if (cursor != null && cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                if (index >= 0) {
+                    size = cursor.getLong(index)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            cursor?.close()
+        }
+    }
+    return size
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes <= 0 -> "0 B"
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0)
+        else -> String.format(java.util.Locale.US, "%.2f MB", bytes / (1024.0 * 1024.0))
     }
 }

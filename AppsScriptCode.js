@@ -1,991 +1,2834 @@
 /**
- * =========================================================================
- * GOOGLE APPS SCRIPT - REST API FOR HUB KEDIRI FLEET & SHIPMENT MANAGEMENT
- * =========================================================================
- * 
- * CARA DEPLOY:
- * 1. Buka Google Sheets Anda atau kunjungi https://script.google.com
- * 2. Buat project baru bernama "Hub Kediri REST API".
- * 3. Hapus kode default (myFunction) dan paste seluruh kode di file ini.
- * 4. Ganti SPREADSHEETS ID di bawah ini jika ingin menggunakan spreadsheet Anda sendiri.
- * 5. Klik tombol "Deploy" di kanan atas -> Pilih "New deployment".
- * 6. Pilih jenis/type "Web app".
- * 7. Konfigurasi Deployment:
- *    - Description: "Hub Kediri REST API v1"
- *    - Execute as: "Me" (Email Anda - ini wajib agar script memiliki izin menulis ke sheet)
- *    - Who has access: "Anyone" (Siapa saja, bahkan anonim - ini wajib agar aplikasi Android/React bisa mengakses tanpa OAuth prompt)
- * 8. Klik "Deploy".
- * 9. Berikan izin akses (Authorize access) ketika diminta dengan akun Google Anda.
- * 10. Copy "Web app URL" yang dihasilkan (Format URL: https://script.google.com/macros/s/XXXXX/exec)
- * 11. Masukkan URL tersebut ke menu Pengaturan (Settings) di aplikasi Android atau React Anda.
- *
- * FITUR UTAMA:
- * - Routing Berbasis Path (contoh: /exec/pengiriman, /exec/dashboard) maupun Query Parameter (?endpoint=dashboard)
- * - Dukungan penuh CORS secara otomatis via ContentService JSON
- * - Agregasi data Real-time untuk Dashboard (/dashboard)
- * - Operasi CRUD lengkap (Create, Read, Update, Delete) untuk Log Pengiriman & Armada
- * - Integrasi Asisten AI dengan context langsung dari spreadsheet Knowledge Base
+ * GOOGLE APPS SCRIPT BACKEND FOR FLEET MANAGEMENT & SURAT JALAN PENGIRIMAN
+ * HUB KEDIRI SYSTEM
  */
 
-// SPREADSHEETS CONFIGURATION (ID Database Spreadsheet Hub Kediri)
-const SPREADSHEETS = {
-  PENGIRIMAN: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw",
-  PENGIRIMAN_LOG: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw",
-  ARMADA: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw",
-  AI_DATA: "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw"
-};
-const DRIVE_DELIVERY_FOLDER_ID = "12NyXxBBU8MOcr6so-LCrRazCQifHeSv1";
+// ============================================
+// KONFIGURASI & KONSTANTA
+// ============================================
+
+var DEFAULT_SPREADSHEET_ID = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw";
+var GID_ARMADA = 1850941825;
+var GID_AI_DATA = 888604592;
+var GID_PENGAJUAN = 1517362778;
+var GID_CATATAN_DRIVER = 1562754278;
+var GID_LOG_HARIAN = 1263706817;
+var GID_ODOMETER_KM = 1263706817;
+var GID_DAFTAR_DRIVER = 479314622;
+var GID_KIR_PAJAK = 2062052578;
+var GID_BAN = 817527065;
+var GID_AKI = 1886867333;
+var GID_ARSIP_PENGIRIMAN = 1878433267;
+var GID_SURAT_JALAN = 1878433267; // GID Arsip Bukti Pengiriman
+var FOLDER_ID_PENGIRIMAN = "1ima95RpfQrlaq2v_PJzk3HtRbcI03EcI"; // 05_BUKTI_PENGIRIMAN
+var FOLDER_ID_PROFIL_ARMADA = "1Byjocy7gfIxgYYs4P1lKRgHIqyPzAYPC"; // 02_FOTO_PROFIL_ARMADA
+var FOLDER_ID_KM = "1VP-UhNQ0XrLiZaG283_7qqRM-p8mQkhE"; // 03_FOTO_ODOMETER_KM
+var FOLDER_ID_PENGAJUAN = "1pHiCGelOHZdC01FZXWQlUBgo9ma3V0LG"; // 04_PENGAJUAN
+var FOLDER_ID_DATABASE = "1KfUvHtEbZtU_GQH9N88s-V0LQwRQzD7P"; // 01_DATABASE_DAN_BACKEND
+var FOLDER_ID_NOTA_BBM = "1kUXk-8DoVBNtpveELmRf8FTt_Z_04EYd"; // 04_NOTA_BBM_LOG_HARIAN
+
+function getAdminEmail() {
+  return PropertiesService.getScriptProperties().getProperty("ADMIN_EMAIL") || "deckyp5758@gmail.com";
+}
+
+// ============================================
+// HELPER FUNCTIONS UTAMA (INFRASTRUKTUR & OPTIMASI)
+// ============================================
 
 /**
- * Handle GET Requests (Read Operations)
- * Endpoint yang didukung: /pengiriman, /armada, /aidata, /dashboard, /drivers, /ban, /logs
+ * Membaca seluruh sheet dalam spreadsheet SEKALI SAJA
+ * Mengembalikan dictionary/map berdasarkan GID dan Nama Sheet (UPPERCASE)
  */
-function doGet(e) {
-  // Ambil rute endpoint dari pathInfo (misal: /pengiriman) atau query parameter (?endpoint=pengiriman)
-  var route = "";
-  if (e.pathInfo) {
-    route = e.pathInfo.toLowerCase();
-  } else {
-    var paramRoute = e.parameter.endpoint || e.parameter.path || e.parameter.action || "";
-    route = paramRoute.toLowerCase();
-  }
-  
-  // Bersihkan karakter slash di awal dan akhir rute
-  route = route.replace(/^\/+|\/+$/g, "");
-
-  var customSpreadsheetId = e.parameter.spreadsheetId;
-
+function getSheetMap(spreadsheet) {
+  var map = {
+    byGid: {},
+    byName: {},
+    sheets: []
+  };
+  if (!spreadsheet) return map;
   try {
-    // -----------------------------------------------------------------
-    // 1. ENDPOINT: GET /pengiriman
-    // Data bersumber dari Spreadsheet: 1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw
-    // Mapping Kolom:
-    // Kolom D (3): No Dokumen
-    // Kolom E (4): Surat Jalan
-    // Kolom H (7): Alamat
-    // Kolom I (8): Remarks
-    // Kolom L (11): Penerima
-    // Kolom R (17): No Telp Customer
-    // Kolom S (18): CBM
-    // Kolom X (23): Armada
-    // Kolom Y (24) & Z (25): Driver 1 & Driver 2
-    // -----------------------------------------------------------------
-    if (route === "pengiriman" || route === "getpengiriman") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.PENGIRIMAN;
-      var ss = SpreadsheetApp.openById(ssId);
-      var sheet = ss.getSheetByName("Pengiriman") || ss.getSheets()[0];
-      var data = sheet.getDataRange().getValues();
-      var headers = data[0];
-      var list = [];
-      
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        if (!row || row.length === 0) continue;
-
-        var itemObj = {};
-        for (var j = 0; j < headers.length; j++) {
-          var hName = headers[j].toString().trim();
-          itemObj[hName] = row[j];
-        }
-
-        var noDokumen = (row[3] !== undefined && row[3] !== null ? row[3].toString().trim() : "") || itemObj["Nomor dokumen"] || itemObj["noDokumen"] || "";
-        var noSuratJalan = (row[4] !== undefined && row[4] !== null ? row[4].toString().trim() : "") || itemObj["Surat jalan"] || itemObj["noSuratJalan"] || "";
-        var alamat = (row[7] !== undefined && row[7] !== null ? row[7].toString().trim() : "") || itemObj["Alamat"] || itemObj["tujuan"] || "";
-        var remarks = (row[8] !== undefined && row[8] !== null ? row[8].toString().trim() : "") || itemObj["Remarks"] || itemObj["remaks"] || itemObj["catatan"] || "";
-        var penerima = (row[11] !== undefined && row[11] !== null ? row[11].toString().trim() : "") || itemObj["Penerima"] || "";
-        var noTelpCustomer = (row[17] !== undefined && row[17] !== null ? row[17].toString().trim() : "") || itemObj["Nomor telpon custumer"] || itemObj["noTelpCustomer"] || "";
-        var cbmVal = row[18] !== undefined && row[18] !== null ? parseFloat(row[18]) : 0;
-        if (isNaN(cbmVal)) cbmVal = 0.0;
-        var armada = (row[23] !== undefined && row[23] !== null ? row[23].toString().trim() : "") || itemObj["Armada"] || "";
-        var driver1 = (row[24] !== undefined && row[24] !== null ? row[24].toString().trim() : "") || itemObj["Driver 1"] || "";
-        var driver2 = (row[25] !== undefined && row[25] !== null ? row[25].toString().trim() : "") || itemObj["Driver 2"] || "";
-        
-        var combinedDriver = driver1;
-        if (driver2 && driver2 !== "-" && driver2 !== "") {
-          combinedDriver = combinedDriver ? (combinedDriver + " / " + driver2) : driver2;
-        }
-
-        // Tanggal dari Kolom A (0) atau B (1) atau C (2) atau fallback ke format standar
-        var tanggalStr = "";
-        if (row[0]) tanggalStr = row[0].toString().trim();
-        else if (row[1]) tanggalStr = row[1].toString().trim();
-        else if (row[2]) tanggalStr = row[2].toString().trim();
-
-        // Status dari kolom jika ada, fallback ke Belum Berangkat
-        var statusStr = itemObj["Status"] || itemObj["status"] || (row[9] ? row[9].toString().trim() : "Belum Berangkat");
-
-        if (noSuratJalan || noDokumen || alamat) {
-          list.push({
-            id: i,
-            noDokumen: noDokumen,
-            noSuratJalan: noSuratJalan,
-            tanggal: tanggalStr,
-            driver: combinedDriver || itemObj["driver"] || "-",
-            driver1: driver1,
-            driver2: driver2,
-            armada: armada || itemObj["armada"] || "-",
-            gudangAsal: itemObj["gudangAsal"] || "Gudang Kediri",
-            tujuan: alamat,
-            alamat: alamat,
-            remarks: remarks,
-            penerima: penerima,
-            noTelpCustomer: noTelpCustomer,
-            jumlahKoli: itemObj["jumlahKoli"] ? parseInt(itemObj["jumlahKoli"]) : 1,
-            volumeCbm: cbmVal,
-            status: statusStr,
-            catatan: remarks
-          });
-        }
-      }
-      return jsonResponse({ success: true, endpoint: "/pengiriman", data: list });
+    var sheets = spreadsheet.getSheets();
+    map.sheets = sheets;
+    for (var i = 0; i < sheets.length; i++) {
+      var s = sheets[i];
+      var gidStr = String(s.getSheetId());
+      var nameUpper = s.getName().toUpperCase().replace(/\s+/g, " ").trim();
+      map.byGid[gidStr] = s;
+      map.byName[nameUpper] = s;
+      map[gidStr] = s;
+      map[nameUpper] = s;
     }
+  } catch (e) {
+    Logger.log("getSheetMap error: " + e.toString());
+  }
+  return map;
+}
 
-    // -----------------------------------------------------------------
-    // 2. ENDPOINT: GET /armada
-    // -----------------------------------------------------------------
-    if (route === "armada" || route === "getarmada") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Armada") || SpreadsheetApp.openById(ssId).getSheets()[0];
-      var data = sheet.getDataRange().getValues();
-      var headers = data[0];
-      var list = [];
-      
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        var item = {};
-        for (var j = 0; j < headers.length; j++) {
-          var headerName = headers[j].toString().trim();
-          item[headerName] = row[j];
-        }
-        if (item.armadaId) {
-          list.push(item);
-        }
-      }
-      return jsonResponse({ success: true, endpoint: "/armada", armada: list });
+/**
+ * Menulis 1 baris/range nilai ke sheet secara BATCH 1x RPC call setValues()
+ */
+function batchWriteRow(sheet, rowIndex, startCol, valuesArray) {
+  if (!sheet || !valuesArray) return;
+  var matrix = Array.isArray(valuesArray[0]) ? valuesArray : [valuesArray];
+  if (matrix.length === 0 || matrix[0].length === 0) return;
+  sheet.getRange(rowIndex, startCol, matrix.length, matrix[0].length).setValues(matrix);
+}
+
+/**
+ * Standardisasi format output JSON dengan timestamp
+ */
+function jsonResponse(success, message, data) {
+  var responseObj = {};
+  if (typeof success === "object" && success !== null) {
+    responseObj = success;
+    if (responseObj.timestamp === undefined) {
+      responseObj.timestamp = new Date().getTime();
     }
+  } else {
+    responseObj = {
+      success: Boolean(success),
+      message: message || "",
+      data: data !== undefined ? data : null,
+      timestamp: new Date().getTime()
+    };
+  }
+  return ContentService.createTextOutput(JSON.stringify(responseObj)).setMimeType(ContentService.MimeType.JSON);
+}
 
-    // -----------------------------------------------------------------
-    // 3. ENDPOINT: GET /aidata
-    // -----------------------------------------------------------------
-    if (route === "aidata" || route === "getaidata" || route === "getaiknowledge") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.AI_DATA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Knowledge") || SpreadsheetApp.openById(ssId).getSheets()[0];
-      var data = sheet.getDataRange().getValues();
-      var headers = data[0];
-      var list = [];
-      
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        var item = {};
-        for (var j = 0; j < headers.length; j++) {
-          var headerName = headers[j].toString().trim();
-          item[headerName] = row[j];
-        }
-        list.push(item);
-      }
-      return jsonResponse({ success: true, endpoint: "/aidata", data: list });
-    }
+/**
+ * Helper internal untuk ambil sheet berdasarkan Nama dari sheetMap/ss
+ */
+function getSheetByNameFromMap(ss, sheetMap, name) {
+  if (!name) return null;
+  var nameUpper = String(name).toUpperCase().replace(/\s+/g, " ").trim();
+  if (sheetMap && sheetMap.byName && sheetMap.byName[nameUpper]) {
+    return sheetMap.byName[nameUpper];
+  }
+  if (sheetMap && sheetMap[nameUpper] && typeof sheetMap[nameUpper].getName === "function") {
+    return sheetMap[nameUpper];
+  }
+  if (ss && typeof ss.getSheetByName === "function") {
+    return ss.getSheetByName(name);
+  }
+  return null;
+}
 
-    // -----------------------------------------------------------------
-    // 4. ENDPOINT: GET /dashboard (Agregasi multi-spreadsheet)
-    // -----------------------------------------------------------------
-    if (route === "dashboard" || route === "getdashboard") {
-      return getDashboardData(customSpreadsheetId);
-    }
+// ============================================
+// HANDLER UTAMA (doGet, doPost)
+// ============================================
 
-    // -----------------------------------------------------------------
-    // 5. ENDPOINTS LAINNYA (Drivers, Ban Armada, Logs)
-    // -----------------------------------------------------------------
-    if (route === "drivers" || route === "getdrivers") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Drivers");
-      if (!sheet) {
-        return jsonResponse({
-          success: true,
-          endpoint: "/drivers",
-          drivers: [
-            { id: "D01", name: "Driver HUB 1" },
-            { id: "D02", name: "Driver HUB 2" }
-          ]
+function doGet(e) {
+  try {
+    var ss = getSpreadsheet(e);
+    var sheetMap = getSheetMap(ss);
+    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "getDrivers";
+
+    Logger.log("doGet called. Action: " + action + ", Spreadsheet ID: " + (ss ? ss.getId() : "null"));
+
+    if (action === "getDrivers") {
+      return jsonResponse({ success: true, drivers: getDrivers(ss, sheetMap) });
+    } else if (action === "getArmada" || action === "getKirPajak") {
+      return jsonResponse({ success: true, armada: getArmada(ss, sheetMap) });
+    } else if (action === "getLogs") {
+      return jsonResponse({ success: true, logs: getLogs(ss, 100, sheetMap) });
+    } else if (action === "getBanArmada") {
+      return jsonResponse({ success: true, banArmada: getBanArmada(ss, sheetMap) });
+    } else if (action === "getPengajuan" || action === "get_pengajuan") {
+      return jsonResponse({ success: true, data: getPengajuan(ss, 100, sheetMap) });
+    } else if (action === "getPengiriman") {
+      return jsonResponse({ success: true, data: getPengiriman(ss, sheetMap) });
+    } else if (action === "getAiKnowledge") {
+      return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
+    } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
+      return jsonResponse({
+        success: true,
+        latestVersionCode: 1,
+        latestVersionName: "1.0.0",
+        apkDownloadUrl: "",
+        forceUpdate: false,
+        changelog: "Pembaruan sistem validasi login driver dan peningkatan stabilitas aplikasi."
+      });
+    } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
+      return jsonResponse(setupAllSheets(ss));
+    } else if (action === "debug" || action === "debugSheets") {
+      var sheetsInfo = [];
+      var allSheets = sheetMap.sheets || ss.getSheets();
+      for (var s = 0; s < allSheets.length; s++) {
+        var sh = allSheets[s];
+        sheetsInfo.push({
+          index: s,
+          name: sh.getName(),
+          gid: sh.getSheetId(),
+          lastRow: sh.getLastRow(),
+          lastColumn: sh.getLastColumn()
         });
       }
-      var data = sheet.getDataRange().getValues();
-      var list = [];
-      for (var i = 1; i < data.length; i++) {
-        list.push({ id: data[i][0].toString(), name: data[i][1].toString() });
-      }
-      return jsonResponse({ success: true, endpoint: "/drivers", drivers: list });
+
+      return jsonResponse({
+        success: true,
+        spreadsheetId: ss.getId(),
+        spreadsheetName: ss.getName(),
+        allSheets: sheetsInfo
+      });
     }
 
-    if (route === "ban" || route === "getbanarmada") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Ban");
-      if (!sheet) return jsonResponse({ success: true, endpoint: "/ban", banArmada: [] });
-      var data = sheet.getDataRange().getValues();
-      var headers = data[0];
-      var list = [];
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        var item = {};
-        for (var j = 0; j < headers.length; j++) {
-          var headerName = headers[j].toString().trim();
-          item[headerName] = row[j];
-        }
-        if (item.armadaId) list.push(item);
-      }
-      return jsonResponse({ success: true, endpoint: "/ban", banArmada: list });
-    }
+    // Default fallback HTML view for Web App deploy check
+    return HtmlService.createHtmlOutput(
+      "<html><head><style>" +
+      "body { font-family: sans-serif; padding: 30px; background: #f4f6f9; color: #333; }" +
+      ".card { background: white; padding: 20px; border-radius: 8px; border-top: 4px solid #0054A6; max-width: 600px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }" +
+      "h2 { color: #0054A6; margin-top: 0; }" +
+      ".badge { background: #e3f2fd; color: #0d47a1; padding: 8px 12px; border-radius: 4px; font-weight: bold; display: inline-block; margin-bottom: 15px; }" +
+      "</style></head><body>" +
+      "<div class='card'>" +
+      "<h2>HUB KEDIRI Apps Script Backend Active!</h2>" +
+      "<div class='badge'>Status: Online & Ready</div>" +
+      "<p>Web App Service ini aktif untuk menyinkronkan data Armada, Driver, Surat Jalan, dan Log Harian dengan Aplikasi Android.</p>" +
+      "</div></body></html>"
+    ).setTitle("HUB KEDIRI Fleet API").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
-    if (route === "logs" || route === "getlogs") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Logs") || SpreadsheetApp.openById(ssId).getSheetByName("LogHarian");
-      if (!sheet) return jsonResponse({ success: true, endpoint: "/logs", logs: [] });
-      var data = sheet.getDataRange().getValues();
-      var headers = data[0];
-      var list = [];
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        var item = {};
-        for (var j = 0; j < headers.length; j++) {
-          var headerName = headers[j].toString().trim();
-          item[headerName] = row[j];
-        }
-        list.push(item);
-      }
-      return jsonResponse({ success: true, endpoint: "/logs", logs: list });
-    }
-
-    // Default jika rute tidak terdefinisi
-    return jsonResponse({ 
-      success: false, 
-      message: "Endpoint '" + route + "' tidak didukung.",
-      availableEndpoints: ["/pengiriman", "/armada", "/aidata", "/dashboard", "/drivers", "/logs", "/ban"]
-    });
-
-  } catch (error) {
-    return jsonResponse({ success: false, message: "GET Router Error: " + error.toString() });
-  }
-}
-
-/**
- * Memproses data dashboard real-time dari gabungan spreadsheet Pengiriman & Armada
- */
-function getDashboardData(customSpreadsheetId) {
-  var summary = {
-    pengiriman: {
-      totalShipments: 0,
-      selesai: 0,
-      dalamPerjalanan: 0,
-      belumBerangkat: 0,
-      totalKoli: 0,
-      totalVolumeCbm: 0
-    },
-    armada: {
-      totalTrucks: 0,
-      segeraServis: 0,
-      aman: 0,
-      serviceUnder1000: 0
-    },
-    drivers: {
-      totalDrivers: 0
-    }
-  };
-
-  try {
-    // 1. Hitung statistik Pengiriman
-    var ssIdPengiriman = customSpreadsheetId || SPREADSHEETS.PENGIRIMAN;
-    var sheetPengiriman = SpreadsheetApp.openById(ssIdPengiriman).getSheetByName("Pengiriman") || SpreadsheetApp.openById(ssIdPengiriman).getSheets()[0];
-    var dataPengiriman = sheetPengiriman.getDataRange().getValues();
-    var headersPengiriman = dataPengiriman[0];
-    
-    var statusIdx = headersPengiriman.indexOf("status");
-    var koliIdx = headersPengiriman.indexOf("jumlahKoli");
-    var volumeIdx = headersPengiriman.indexOf("volumeCbm");
-    
-    if (statusIdx === -1) statusIdx = headersPengiriman.findIndex(h => h.toString().toLowerCase() === "status");
-    if (koliIdx === -1) koliIdx = headersPengiriman.findIndex(h => h.toString().toLowerCase() === "jumlahkoli");
-    if (volumeIdx === -1) volumeIdx = headersPengiriman.findIndex(h => h.toString().toLowerCase() === "volumecbm");
-
-    for (var i = 1; i < dataPengiriman.length; i++) {
-      var row = dataPengiriman[i];
-      if (row[0] !== "" && row[0] !== undefined) {
-        summary.pengiriman.totalShipments++;
-        
-        if (statusIdx !== -1 && row[statusIdx]) {
-          var statusVal = row[statusIdx].toString().toLowerCase().trim();
-          if (statusVal === "selesai") summary.pengiriman.selesai++;
-          else if (statusVal === "dalam perjalanan") summary.pengiriman.dalamPerjalanan++;
-          else if (statusVal === "belum berangkat") summary.pengiriman.belumBerangkat++;
-        }
-        
-        if (koliIdx !== -1 && row[koliIdx] !== "") {
-          var koliVal = parseInt(row[koliIdx]);
-          if (!isNaN(koliVal)) summary.pengiriman.totalKoli += koliVal;
-        }
-        
-        if (volumeIdx !== -1 && row[volumeIdx] !== "") {
-          var volVal = parseFloat(row[volumeIdx]);
-          if (!isNaN(volVal)) summary.pengiriman.totalVolumeCbm += volVal;
-        }
-      }
-    }
-
-    // 2. Hitung statistik Armada
-    var ssIdArmada = customSpreadsheetId || SPREADSHEETS.ARMADA;
-    var sheetArmada = SpreadsheetApp.openById(ssIdArmada).getSheetByName("Armada") || SpreadsheetApp.openById(ssIdArmada).getSheets()[0];
-    var dataArmada = sheetArmada.getDataRange().getValues();
-    var headersArmada = dataArmada[0];
-    
-    var statusArmadaIdx = headersArmada.indexOf("status");
-    if (statusArmadaIdx === -1) statusArmadaIdx = headersArmada.findIndex(h => h.toString().toLowerCase() === "status");
-
-    for (var i = 1; i < dataArmada.length; i++) {
-      var row = dataArmada[i];
-      if (row[0] !== "" && row[0] !== undefined) {
-        summary.armada.totalTrucks++;
-        
-        if (statusArmadaIdx !== -1 && row[statusArmadaIdx]) {
-          var statVal = row[statusArmadaIdx].toString().toUpperCase().trim();
-          if (statVal.indexOf("SEGERA SERVIS") !== -1) summary.armada.segeraServis++;
-          else if (statVal.indexOf("SERVICE <1000 KM") !== -1) summary.armada.serviceUnder1000++;
-          else summary.armada.aman++;
-        }
-      }
-    }
-
-    // 3. Hitung statistik Driver
-    var sheetDrivers = SpreadsheetApp.openById(ssIdArmada).getSheetByName("Drivers");
-    if (sheetDrivers) {
-      var dataDrivers = sheetDrivers.getDataRange().getValues();
-      summary.drivers.totalDrivers = Math.max(0, dataDrivers.length - 1);
-    } else {
-      summary.drivers.totalDrivers = 2; // Default fallback
-    }
-
-    return jsonResponse({
-      success: true,
-      endpoint: "/dashboard",
-      data: summary
-    });
   } catch (err) {
-    return jsonResponse({
-      success: false,
-      message: "Gagal menghitung agregasi dashboard: " + err.toString(),
-      data: summary
-    });
+    return jsonResponse(false, err.message || err.toString(), null);
   }
 }
 
-/**
- * Handle POST Requests (Write Operations)
- * Endpoint & Aksi yang didukung: 
- * - /pengiriman (untuk add)
- * - /updatepengiriman, /deletepengiriman
- * - /login, /submitlog, /submitservicelog
- * - /asisten_ai
- */
 function doPost(e) {
-  var route = "";
-  if (e && e.pathInfo) {
-    route = e.pathInfo.toLowerCase();
-  } else if (e && e.parameter) {
-    var paramRoute = e.parameter.endpoint || e.parameter.path || e.parameter.action || "";
-    route = paramRoute.toLowerCase();
-  }
-  route = route.replace(/^\/+|\/+$/g, "");
-
   try {
-    var postData = {};
+    var contents = {};
     if (e && e.postData && e.postData.contents) {
-      postData = JSON.parse(e.postData.contents);
-    }
-    var customSpreadsheetId = e && e.parameter ? e.parameter.spreadsheetId : null;
-
-    if (!route && postData) {
-      route = (postData.action || postData.route || postData.endpoint || "").toLowerCase().replace(/^\/+|\/+$/g, "");
-    }
-
-    // -----------------------------------------------------------------
-    // POST /pengiriman ATAU action=addPengiriman
-    // -----------------------------------------------------------------
-    if (route === "addpengiriman" || route === "pengiriman") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.PENGIRIMAN;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Pengiriman") || SpreadsheetApp.openById(ssId).getSheets()[0];
-      
-      var lastRow = sheet.getLastRow();
-      var newId = 1;
-      if (lastRow > 1) {
-        newId = parseInt(sheet.getRange(lastRow, 1).getValue()) + 1;
-        if (isNaN(newId)) newId = lastRow;
-      }
-
-      sheet.appendRow([
-        newId,
-        postData.noSuratJalan || "",
-        postData.tanggal || "",
-        postData.driver || "",
-        postData.armada || "",
-        postData.gudangAsal || "",
-        postData.tujuan || "",
-        postData.jumlahKoli || 0,
-        postData.volumeCbm || 0.0,
-        postData.status || "Belum Berangkat",
-        postData.catatan || ""
-      ]);
-
-      return jsonResponse({ success: true, message: "Pengiriman berhasil ditambahkan!", newId: newId });
-    }
-
-    // -----------------------------------------------------------------
-    // POST /updatepengiriman
-    // -----------------------------------------------------------------
-    if (route === "updatepengiriman") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.PENGIRIMAN;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Pengiriman") || SpreadsheetApp.openById(ssId).getSheets()[0];
-      var data = sheet.getDataRange().getValues();
-      var targetId = parseInt(postData.id);
-      
-      for (var i = 1; i < data.length; i++) {
-        if (parseInt(data[i][0]) === targetId) {
-          var rowNum = i + 1;
-          if (postData.noSuratJalan !== undefined) sheet.getRange(rowNum, 2).setValue(postData.noSuratJalan);
-          if (postData.tanggal !== undefined) sheet.getRange(rowNum, 3).setValue(postData.tanggal);
-          if (postData.driver !== undefined) sheet.getRange(rowNum, 4).setValue(postData.driver);
-          if (postData.armada !== undefined) sheet.getRange(rowNum, 5).setValue(postData.armada);
-          if (postData.gudangAsal !== undefined) sheet.getRange(rowNum, 6).setValue(postData.gudangAsal);
-          if (postData.tujuan !== undefined) sheet.getRange(rowNum, 7).setValue(postData.tujuan);
-          if (postData.jumlahKoli !== undefined) sheet.getRange(rowNum, 8).setValue(postData.jumlahKoli);
-          if (postData.volumeCbm !== undefined) sheet.getRange(rowNum, 9).setValue(postData.volumeCbm);
-          if (postData.status !== undefined) sheet.getRange(rowNum, 10).setValue(postData.status);
-          if (postData.catatan !== undefined) sheet.getRange(rowNum, 11).setValue(postData.catatan);
-
-          return jsonResponse({ success: true, message: "Pengiriman berhasil diupdate!" });
-        }
-      }
-      return jsonResponse({ success: false, message: "Data pengiriman tidak ditemukan dengan ID: " + targetId });
-    }
-
-    // -----------------------------------------------------------------
-    // POST /submitterkirim ATAU action=submitterkirim
-    // Simpan foto/video ke Google Drive folder ID: 1EarofgXOvxNsKVGc5XeTfOkYYV6ceGwK
-    // Catat log ke Spreadsheet ID: 1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw
-    // -----------------------------------------------------------------
-    if (route === "submitterkirim" || route === "terkirimpengiriman" || route === "terkirim") {
-      var deliveryDate = postData.tanggal || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd");
-      var orderNo = postData.noSuratJalan || postData.noDokumen || "";
-      var folderName = orderNo ? "Bukti_Pengiriman_" + orderNo : deliveryDate.toString().replace(/\//g, "-").trim();
-      if (!folderName) folderName = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd");
-
-      var uploadedUrls = [];
-      if (postData.files && postData.files.length > 0) {
-        try {
-          var parentFolder = DriveApp.getFolderById(DRIVE_DELIVERY_FOLDER_ID);
-          var subFolders = parentFolder.getFoldersByName(folderName);
-          var targetFolder = subFolders.hasNext() ? subFolders.next() : parentFolder.createFolder(folderName);
-
-          for (var f = 0; f < postData.files.length; f++) {
-            var fileObj = postData.files[f];
-            if (fileObj && fileObj.base64) {
-              var fileBytes = Utilities.base64Decode(fileObj.base64);
-              var mimeType = fileObj.mimeType || "image/jpeg";
-              var isVid = mimeType.indexOf("video") >= 0;
-              var ext = isVid ? ".mp4" : ".jpg";
-              var fileName = fileObj.fileName || ("Bukti_" + (postData.noSuratJalan || "SJ") + "_" + (f + 1) + ext);
-              var blob = Utilities.newBlob(fileBytes, mimeType, fileName);
-              var driveFile = targetFolder.createFile(blob);
-              try {
-                driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-              } catch (eDrive) {}
-              uploadedUrls.push(driveFile.getUrl());
-            }
-          }
-        } catch (eFolder) {
-          Logger.log("Drive Upload Error: " + eFolder.message);
-        }
-      }
-
-      var fileLinksJoined = uploadedUrls.join("\n");
-
-      // Catat ke Spreadsheet Log Pengiriman: 1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw
-      var logSsId = SPREADSHEETS.PENGIRIMAN_LOG;
-      var logSs = SpreadsheetApp.openById(logSsId);
-      var logSheet = logSs.getSheetByName("Pengiriman_Log") || logSs.getSheetByName("LogPengiriman") || logSs.getSheetByName("Pengiriman");
-      if (!logSheet) {
-        logSheet = logSs.insertSheet("Pengiriman_Log");
-        logSheet.appendRow([
-          "Waktu Terkirim", "Tanggal Pengiriman", "No Dokumen", "No Surat Jalan", 
-          "Driver", "Armada", "Alamat / Tujuan", "Penerima", "No Telp Customer", 
-          "CBM", "Status", "Bukti Drive (Foto/Video)", "Catatan Driver"
-        ]);
-      }
-
-      var nowTimestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
-      logSheet.appendRow([
-        nowTimestamp,
-        postData.tanggal || "",
-        postData.noDokumen || "",
-        postData.noSuratJalan || "",
-        postData.driver || "",
-        postData.armada || "",
-        postData.alamat || "",
-        postData.penerima || "",
-        postData.noTelpCustomer || "",
-        postData.volumeCbm || 0.0,
-        "TERKIRIM",
-        fileLinksJoined,
-        postData.catatan || ""
-      ]);
-
-      // Update status di Sheet Asal (1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw)
       try {
-        var srcSsId = SPREADSHEETS.PENGIRIMAN;
-        var srcSs = SpreadsheetApp.openById(srcSsId);
-        var srcSheet = srcSs.getSheetByName("Pengiriman") || srcSs.getSheets()[0];
-        var srcData = srcSheet.getDataRange().getValues();
-        var targetRowIndex = -1;
-        if (postData.id && parseInt(postData.id) > 0 && parseInt(postData.id) < srcData.length) {
-          targetRowIndex = parseInt(postData.id);
-        } else {
-          for (var r = 1; r < srcData.length; r++) {
-            var rowSJ = (srcData[r][4] || "").toString().trim();
-            var rowDok = (srcData[r][3] || "").toString().trim();
-            if ((postData.noSuratJalan && rowSJ === postData.noSuratJalan.trim()) || (postData.noDokumen && rowDok === postData.noDokumen.trim())) {
-              targetRowIndex = r;
-              break;
-            }
-          }
-        }
-        if (targetRowIndex > 0) {
-          srcSheet.getRange(targetRowIndex + 1, 10).setValue("TERKIRIM");
-        }
-      } catch (eSrc) {
-        Logger.log("Update status source error: " + eSrc.message);
-      }
+        contents = JSON.parse(e.postData.contents);
+      } catch(parseErr) {}
+    }
 
-      return jsonResponse({
-        success: true,
-        message: "Pengiriman terkirim! Bukti berhasil disimpan ke Google Drive dan Spreadsheet.",
-        driveUrls: uploadedUrls
+    var ss = getSpreadsheet(e, contents);
+    var sheetMap = getSheetMap(ss);
+    var action = contents.action || (e && e.parameter && e.parameter.action) || "";
+
+    Logger.log("doPost called. Action: " + action + ", Spreadsheet ID: " + (ss ? ss.getId() : "null"));
+
+    if (action === "getDrivers") {
+      return jsonResponse({ success: true, drivers: getDrivers(ss, sheetMap) });
+    } else if (action === "getArmada" || action === "getKirPajak") {
+      return jsonResponse({ success: true, armada: getArmada(ss, sheetMap) });
+    } else if (action === "getLogs") {
+      return jsonResponse({ success: true, logs: getLogs(ss, 100, sheetMap) });
+    } else if (action === "getBanArmada") {
+      return jsonResponse({ success: true, banArmada: getBanArmada(ss, sheetMap) });
+    } else if (action === "getPengajuan" || action === "get_pengajuan") {
+      return jsonResponse({ success: true, data: getPengajuan(ss, 100, sheetMap) });
+    } else if (action === "getPengiriman") {
+      return jsonResponse({ success: true, data: getPengiriman(ss, sheetMap) });
+    } else if (action === "getAiKnowledge") {
+      return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
+    } else if (action === "login") {
+      return jsonResponse(validateLogin(contents, ss, sheetMap));
+    } else if (action === "submitLog") {
+      return jsonResponse(submitLog(contents, ss, sheetMap));
+    } else if (action === "submitservicelog" || action === "submit_service") {
+      return jsonResponse(submitService(contents, ss, sheetMap));
+    } else if (action === "update_aki" || action === "updateAki") {
+      return jsonResponse(updateAki(contents, ss, sheetMap));
+    } else if (action === "updateban" || action === "update_ban") {
+      return jsonResponse(updateBan(contents, ss, sheetMap));
+    } else if (action === "submitterkirim" || action === "submitTerkirim" || action === "submit_terkirim") {
+      return jsonResponse(submitTerkirim(contents, ss, sheetMap));
+    } else if (action === "updateFotoArmada" || action === "update_foto_armada") {
+      return jsonResponse(updateFotoArmada(contents, ss, sheetMap));
+    } else if (action === "updateFotoServiceArmada" || action === "update_foto_service_armada") {
+      return jsonResponse(updateFotoServiceArmada(contents, ss, sheetMap));
+    } else if (action === "submit_catatan_driver" || action === "submitCatatanDriver") {
+      return jsonResponse(submitCatatanDriver(contents, ss, sheetMap));
+    } else if (action === "clear_catatan_driver" || action === "clearCatatanDriver") {
+      return jsonResponse(clearCatatanDriver(contents, ss, sheetMap));
+    } else if (action === "submitPengajuan" || action === "submit_pengajuan") {
+      return jsonResponse(submitPengajuan(contents, ss, sheetMap));
+    } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
+      return jsonResponse(setupAllSheets(ss));
+    } else if (action === "performOcr" || action === "ocr" || action === "extractKmFromImage") {
+      var b64Ocr = contents.base64Data || contents.base64Photo || contents.base64 || contents.image || "";
+      return jsonResponse(extractKmFromImage(b64Ocr));
+    } else if (action === "asisten_ai") {
+      return jsonResponse(handleAsistenAi(contents));
+    } else {
+      return jsonResponse(false, "Aksi tidak dikenal: " + action, null);
+    }
+  } catch (err) {
+    return jsonResponse(false, err.message || err.toString(), null);
+  }
+}
+
+// ============================================
+// API ENDPOINTS (getDrivers, getArmada, getLogs, getBanArmada, getKirPajak, getPengiriman)
+// ============================================
+
+function getDriverSheet(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  return getSheetByGid(sheetMap, GID_DAFTAR_DRIVER) || 
+         getSheetByGid(ss, GID_DAFTAR_DRIVER) || 
+         getSheetByNameFromMap(ss, sheetMap, "Daftar_Driver") || 
+         getSheetByNameFromMap(ss, sheetMap, "daftar-driver") || 
+         getSheetByNameFromMap(ss, sheetMap, "Daftar-Driver") || 
+         getSheetByNameFromMap(ss, sheetMap, "DAFTAR-DRIVER") || 
+         getSheetByNameFromMap(ss, sheetMap, "DAFTAR_DRIVER") || 
+         getSheetByNameFromMap(ss, sheetMap, "DRIVERS") || 
+         getSheetByNameFromMap(ss, sheetMap, "Driver") ||
+         getSheetByNameFromMap(ss, sheetMap, "Drivers");
+}
+
+function getDrivers(ss, sheetMap) {
+  var sheet = getDriverSheet(ss, sheetMap);
+  var drivers = [];
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    if (data.length >= 2) {
+      var headers = data[0].map(function(h) {
+        return String(h).trim().toLowerCase().replace(/[\s_\-]+/g, "");
       });
-    }
-
-    // -----------------------------------------------------------------
-    // POST /deletepengiriman
-    // -----------------------------------------------------------------
-    if (route === "deletepengiriman") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.PENGIRIMAN;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Pengiriman") || SpreadsheetApp.openById(ssId).getSheets()[0];
-      var data = sheet.getDataRange().getValues();
-      var targetId = parseInt(postData.id);
+      var idCol = -1, nameCol = -1, pinCol = -1;
+      for (var c = 0; c < headers.length; c++) {
+        var h = headers[c];
+        if (idCol === -1 && (h === "iddriver" || h === "id" || h === "nik" || h === "nip" || h === "kodedriver" || h === "kode")) idCol = c;
+        if (nameCol === -1 && (h === "namadriver" || h === "nama" || h === "namalengkap")) nameCol = c;
+        if (pinCol === -1 && (h === "pin" || h === "pinkeamanan" || h === "pass" || h === "password")) pinCol = c;
+      }
+      if (idCol === -1) idCol = 0;
+      if (nameCol === -1) nameCol = (idCol === 0 ? 1 : 0);
+      if (pinCol === -1) pinCol = 2;
 
       for (var i = 1; i < data.length; i++) {
-        if (parseInt(data[i][0]) === targetId) {
-          sheet.deleteRow(i + 1);
-          return jsonResponse({ success: true, message: "Pengiriman berhasil dihapus!" });
-        }
-      }
-      return jsonResponse({ success: false, message: "Data pengiriman tidak ditemukan dengan ID: " + targetId });
-    }
+        var idVal = String(data[i][idCol] !== undefined && data[i][idCol] !== null ? data[i][idCol] : "").trim();
+        var nameVal = String(data[i][nameCol] !== undefined && data[i][nameCol] !== null ? data[i][nameCol] : "").trim();
+        var pinVal = data[i][pinCol] !== undefined && data[i][pinCol] !== null ? String(data[i][pinCol]).trim() : "";
+        if (pinVal.indexOf(".") !== -1) pinVal = pinVal.split(".")[0];
 
-    // -----------------------------------------------------------------
-    // POST /login (Validasi Pin Driver)
-    // -----------------------------------------------------------------
-    if (route === "login") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Drivers") || SpreadsheetApp.openById(ssId).getSheetByName("Daftar_Driver");
-      var inputDriver = (postData.driverName || "").toString().trim().toLowerCase();
-      var inputPin = (postData.pin || "").toString().trim();
-
-      if (!sheet) {
-        return jsonResponse({ success: false, message: "Tab 'Drivers' atau 'Daftar_Driver' tidak ditemukan di Spreadsheet." });
-      }
-      var data = sheet.getDataRange().getValues();
-      for (var i = 1; i < data.length; i++) {
-        var driverIdOnSheet = data[i][0] ? data[i][0].toString().trim() : "";
-        var driverNameOnSheet = data[i][1] ? data[i][1].toString().trim() : "";
-        var pinOnSheet = data[i][2] ? data[i][2].toString().trim() : "";
-
-        if (driverNameOnSheet.toLowerCase() === inputDriver || driverIdOnSheet.toLowerCase() === inputDriver) {
-          if (pinOnSheet === inputPin) {
-            return jsonResponse({ success: true, driverId: driverIdOnSheet || "D01", driverName: driverNameOnSheet || postData.driverName });
-          }
-        }
-      }
-      return jsonResponse({ success: false, message: "ID Driver / Nama atau PIN salah." });
-    }
-
-    // -----------------------------------------------------------------
-    // POST /submitlog (Kirim Log Harian Driver & Update KM Armada)
-    // -----------------------------------------------------------------
-    if (route === "submitlog") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var logsSheet = SpreadsheetApp.openById(ssId).getSheetByName("Logs") || SpreadsheetApp.openById(ssId).getSheetByName("LogHarian");
-      var logData = postData.logData;
-      
-      // Catat log harian baru
-      var now = new Date();
-      var formattedDate = Utilities.formatDate(now, "GMT+7", "dd MMMM yyyy HH:mm") + " WIB";
-      logsSheet.appendRow([
-        formattedDate,
-        logData.armadaId,
-        logData.kmTerdeteksi,
-        logData.base64Photo ? "ImageUploaded" : "", 
-        logData.catatan || "",
-        logData.driverName
-      ]);
-
-      // Update parameter "KM Saat Ini" di daftar Armada
-      var armadaSheet = SpreadsheetApp.openById(ssId).getSheetByName("Armada");
-      var armadaData = armadaSheet.getDataRange().getValues();
-      var sisaKm = 5000;
-      var serviceAlert = false;
-
-      for (var i = 1; i < armadaData.length; i++) {
-        if (armadaData[i][0].toString().trim() === logData.armadaId) {
-          var rowNum = i + 1;
-          armadaSheet.getRange(rowNum, 3).setValue(logData.kmTerdeteksi); // kmSaatIni
-          
-          var kmServis = parseInt(armadaData[i][3]); // kmServiceTerakhir
-          var interval = parseInt(armadaData[i][4]); // intervalService
-          var nextServis = kmServis + interval;
-          sisaKm = nextServis - logData.kmTerdeteksi;
-          
-          armadaSheet.getRange(rowNum, 6).setValue(nextServis);
-          armadaSheet.getRange(rowNum, 7).setValue(sisaKm);
-          
-          var status = sisaKm <= 0 ? "⚠️ SEGERA SERVIS" : (sisaKm < 1000 ? "⚠️ SERVICE <1000 KM" : "AMAN");
-          armadaSheet.getRange(rowNum, 8).setValue(status);
-          serviceAlert = sisaKm < 1000;
-        }
-      }
-
-      return jsonResponse({
-        success: true,
-        message: "Log harian armada berhasil terekam!",
-        sisaKm: sisaKm,
-        serviceAlert: serviceAlert,
-        linkFoto: ""
-      });
-    }
-
-    // -----------------------------------------------------------------
-    // POST /submitservicelog (Selesai Servis Rutin Armada)
-    // -----------------------------------------------------------------
-    if (route === "submitservicelog") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Armada");
-      var data = sheet.getDataRange().getValues();
-      var armadaId = postData.armadaId;
-      var kmServis = parseInt(postData.kmServis);
-      var catatan = postData.catatan || "";
-
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][0].toString().trim() === armadaId) {
-          var rowNum = i + 1;
-          sheet.getRange(rowNum, 4).setValue(kmServis); // kmServiceTerakhir
-          
-          var interval = parseInt(data[i][4]); // intervalService
-          var nextServis = kmServis + interval;
-          var kmSaatIni = parseInt(data[i][2]); // kmSaatIni
-          var sisaKm = nextServis - kmSaatIni;
-          
-          sheet.getRange(rowNum, 6).setValue(nextServis);
-          sheet.getRange(rowNum, 7).setValue(sisaKm);
-          
-          var status = sisaKm <= 0 ? "⚠️ SEGERA SERVIS" : (sisaKm < 1000 ? "⚠️ SERVICE <1000 KM" : "AMAN");
-          sheet.getRange(rowNum, 8).setValue(status);
-          if (catatan) {
-            sheet.getRange(rowNum, 11).setValue(catatan);
-          }
-
-          // Catat di log harian sebagai log servis
-          var logsSheet = SpreadsheetApp.openById(ssId).getSheetByName("Logs") || SpreadsheetApp.openById(ssId).getSheetByName("LogHarian");
-          if (logsSheet) {
-            var now = new Date();
-            var formattedDate = Utilities.formatDate(now, "GMT+7", "dd MMMM yyyy HH:mm") + " WIB";
-            logsSheet.appendRow([
-              formattedDate,
-              armadaId,
-              kmSaatIni,
-              "",
-              "⚙️ SELESAI SERVIS RUTIN (KM " + kmServis + "). Catatan: " + catatan,
-              "Sistem Servis"
-            ]);
-          }
-
-          return jsonResponse({ success: true, message: "Servis armada berhasil terekam dan parameter KM direset!" });
-        }
-      }
-      return jsonResponse({ success: false, message: "ArmadaId tidak ditemukan!" });
-    }
-
-    // -----------------------------------------------------------------
-    // POST /updateban ATAU /update_ban (Update Barcode & Informasi Ban Armada)
-    // CATATAN: Barcode Ban ditempatkan di KOLOM D (Kolom 4) pada sheet "Ban"
-    // -----------------------------------------------------------------
-    if (route === "updateban" || route === "update_ban") {
-      var ssId = customSpreadsheetId || SPREADSHEETS.ARMADA;
-      var sheet = SpreadsheetApp.openById(ssId).getSheetByName("Ban");
-      if (!sheet) {
-        return jsonResponse({ success: false, message: "Sheet Ban tidak ditemukan." });
-      }
-
-      var banData = postData.banData || postData;
-      var targetArmadaId = banData.armadaId;
-      var targetPosisi = banData.posisi;
-
-      var data = sheet.getDataRange().getValues();
-      var headers = data[0].map(function(h) { return h.toString().trim().toLowerCase(); });
-
-      // Indeks kolom dinamis berdasar header dengan fallback ke standar:
-      // A (1): armadaId, B (2): noPolisi, C (3): posisi, D (4): barcode, E (5): noSeri, F (6): ukuran, G (7): merk, H (8): kondisi, I (9): tekanan, J (10): keterangan, K (11): tahun
-      var colArmada = headers.indexOf("armadaid") !== -1 ? headers.indexOf("armadaid") + 1 : 1;
-      var colPosisi = headers.indexOf("posisi") !== -1 ? headers.indexOf("posisi") + 1 : 3;
-      var colBarcode = headers.indexOf("barcode") !== -1 ? headers.indexOf("barcode") + 1 : 4; // Kolom D
-      var colTahun = headers.indexOf("tahun") !== -1 ? headers.indexOf("tahun") + 1 : 11;
-      var colKondisi = headers.indexOf("kondisi") !== -1 ? headers.indexOf("kondisi") + 1 : 8;
-      var colTekanan = headers.indexOf("tekanan") !== -1 ? headers.indexOf("tekanan") + 1 : 9;
-      var colKeterangan = headers.indexOf("keterangan") !== -1 ? headers.indexOf("keterangan") + 1 : 10;
-
-      for (var i = 1; i < data.length; i++) {
-        var rowArmada = data[i][colArmada - 1] ? data[i][colArmada - 1].toString().trim() : "";
-        var rowPosisi = data[i][colPosisi - 1] ? data[i][colPosisi - 1].toString().trim() : "";
-
-        if (rowArmada.toLowerCase() === targetArmadaId.toString().trim().toLowerCase() &&
-            rowPosisi.toLowerCase() === targetPosisi.toString().trim().toLowerCase()) {
-          var rowNum = i + 1;
-
-          if (banData.barcode !== undefined) sheet.getRange(rowNum, colBarcode).setValue(banData.barcode);
-          if (banData.tahun !== undefined) sheet.getRange(rowNum, colTahun).setValue(banData.tahun);
-          if (banData.kondisi !== undefined) sheet.getRange(rowNum, colKondisi).setValue(banData.kondisi);
-          if (banData.tekanan !== undefined) sheet.getRange(rowNum, colTekanan).setValue(banData.tekanan);
-          if (banData.keterangan !== undefined) sheet.getRange(rowNum, colKeterangan).setValue(banData.keterangan);
-
-          return jsonResponse({
-            success: true,
-            message: "Data Ban berhasil diupdate! Barcode disimpan di Kolom D.",
-            updatedData: banData
+        if (idVal || nameVal) {
+          drivers.push({
+            id: idVal || ("D0" + i),
+            name: nameVal || idVal,
+            pin: pinVal || "1234"
           });
         }
       }
-      return jsonResponse({ success: false, message: "Data ban tidak ditemukan untuk armada " + targetArmadaId + " posisi " + targetPosisi });
     }
-
-    // -----------------------------------------------------------------
-    // POST /asisten_ai (Integrasi Asisten Gemini API dengan Konteks Spreadsheet)
-    // -----------------------------------------------------------------
-    if (route === "asisten_ai" || route === "asisten-ai") {
-      var res = callGeminiWithContext(
-        postData.chatMessage || "",
-        customSpreadsheetId || SPREADSHEETS.ARMADA,
-        postData.apiKey
-      );
-      return jsonResponse(res);
-    }
-
-    return jsonResponse({ success: false, message: "Endpoint POST '" + route + "' tidak didukung." });
-  } catch (error) {
-    return jsonResponse({ success: false, message: "POST Router Error: " + error.toString() });
   }
+  if (drivers.length === 0) {
+    drivers = [
+      { id: "D01", name: "Driver HUB 1", pin: "1234" },
+      { id: "D02", name: "Driver HUB 2", pin: "5678" }
+    ];
+  }
+  return drivers;
+}
+
+function getKirPajakMap(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var map = {};
+  var sheet = getSheetByGid(sheetMap, GID_KIR_PAJAK) || 
+              getSheetByNameFromMap(ss, sheetMap, "KIR Pajak Armada") || 
+              getSheetByNameFromMap(ss, sheetMap, "KIR Pajak") || 
+              getSheetByNameFromMap(ss, sheetMap, "KIR_Pajak") || 
+              getSheetByNameFromMap(ss, sheetMap, "KIR");
+  if (!sheet) return map;
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return map;
+
+  var colId = 0, colPol = 1, colKir = 2, colPajakTahunan = 3, colPajak5Tahunan = 4;
+  var header = data[0];
+  if (header && header.length > 0) {
+    for (var c = 0; c < header.length; c++) {
+      var h = String(header[c] || "").trim().toLowerCase();
+      if (h.indexOf("foto") > -1 || h.indexOf("gambar") > -1) continue;
+      if (h.indexOf("id") > -1 || h.indexOf("armada") > -1) colId = c;
+      else if (h.indexOf("polisi") > -1 || h.indexOf("nomer") > -1 || h.indexOf("no pol") > -1) colPol = c;
+      else if (h.indexOf("5 tahun") > -1 || h.indexOf("5th") > -1 || h.indexOf("stnk") > -1) colPajak5Tahunan = c;
+      else if (h.indexOf("pajak") > -1 || h.indexOf("tahunan") > -1) colPajakTahunan = c;
+      else if (h === "kir" || h.indexOf("kir") > -1) colKir = c;
+    }
+  }
+
+  for (var k = 1; k < data.length; k++) {
+    var row = data[k];
+    if (!row) continue;
+    var kArmadaId = String(row[colId] || "").trim();
+    var kNoPol = String(row[colPol] || kArmadaId).trim();
+    if (!kArmadaId && !kNoPol) continue;
+
+    var item = {
+      armadaId: kArmadaId,
+      noPolisi: kNoPol,
+      pajakTahunan: formatDateVal(row[colPajakTahunan]),
+      kir: formatDateVal(row[colKir]),
+      pajak5Tahunan: formatDateVal(row[colPajak5Tahunan])
+    };
+
+    if (kArmadaId) map[kArmadaId.toUpperCase()] = item;
+    if (kNoPol) map[kNoPol.toUpperCase()] = item;
+  }
+  return map;
+}
+
+function getArmada(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var sheet = getSheetByGid(sheetMap, GID_ARMADA) || 
+              getSheetByGid(ss, GID_ARMADA) || 
+              getSheetByNameFromMap(ss, sheetMap, "ARMADA") || 
+              getSheetByNameFromMap(ss, sheetMap, "Armada");
+  var kirMap = getKirPajakMap(ss, sheetMap);
+  var armadaList = [];
+
+  // Foto profil armada disimpan pada kolom L (index 11).
+  // Foto gantungan service disimpan pada kolom M (index 12).
+  var fotoProfileCol = 11;
+  var fotoServiceCol = 12;
+
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0]) {
+        var id = String(data[i][0]).trim().toUpperCase();
+        var nopol = data[i][1] ? String(data[i][1]).trim().toUpperCase() : "";
+        var extra = kirMap[id] || kirMap[nopol] || {};
+        var profileFoto = (data[i][fotoProfileCol] !== undefined && data[i][fotoProfileCol] !== null)
+          ? String(data[i][fotoProfileCol] || "").trim()
+          : "";
+        var serviceFoto = (data[i][fotoServiceCol] !== undefined && data[i][fotoServiceCol] !== null)
+          ? String(data[i][fotoServiceCol] || "").trim()
+          : "";
+        if (serviceFoto.toUpperCase().indexOf("GANTUNGAN") !== -1 || serviceFoto.toUpperCase().indexOf("FOTO GANTUNGAN") !== -1) {
+          serviceFoto = "";
+        }
+        var noteVal = String(data[i][10] || data[i][9] || "");
+
+        var kmSaatIni = Number(data[i][2]) || 0;
+        var kmServiceTerakhir = Number(data[i][3]) || 0;
+        var intervalService = Number(data[i][4]) || 5000;
+        var kmServiceBerikutnya = Number(data[i][5]) || (kmServiceTerakhir + intervalService);
+        var sisaKm = (data[i][6] !== undefined && data[i][6] !== "") ? Number(data[i][6]) : Math.max(0, kmServiceBerikutnya - kmSaatIni);
+
+        armadaList.push({
+          armadaId: String(data[i][0]),
+          noPolisi: nopol,
+          kmSaatIni: kmSaatIni,
+          kmServiceTerakhir: kmServiceTerakhir,
+          intervalService: intervalService,
+          kmServiceBerikutnya: kmServiceBerikutnya,
+          sisaKm: sisaKm,
+          status: data[i][7] ? String(data[i][7]) : "Siap",
+          flag: data[i][8] ? String(data[i][8]) : "",
+          fotoKm: data[i][9] ? String(data[i][9]) : "",
+          catatan: noteVal,
+          catattan: noteVal,
+          pajakTahunan: extra.pajakTahunan || formatDateVal(data[i][5] || ""),
+          kir: extra.kir || formatDateVal(data[i][6] || ""),
+          pajak5Tahunan: extra.pajak5Tahunan || formatDateVal(data[i][7] || ""),
+          fotoTruck: profileFoto,
+          fotoService: serviceFoto,
+          fotoGantunganService: serviceFoto
+        });
+      }
+    }
+  }
+  return armadaList;
+}
+
+function getLogs(ss, limit, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  limit = limit || 100;
+  var sheet = getSheetByGid(sheetMap, GID_LOG_HARIAN) || 
+              getSheetByGid(ss, GID_LOG_HARIAN) || 
+              getSheetByNameFromMap(ss, sheetMap, "log_harian") || 
+              getSheetByNameFromMap(ss, sheetMap, "LOG_HARIAN") || 
+              getSheetByGid(sheetMap, GID_SURAT_JALAN);
+  var logsList = [];
+  if (sheet) {
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow >= 2 && lastCol >= 1) {
+      var startRow = Math.max(2, lastRow - limit + 1);
+      var numRows = lastRow - startRow + 1;
+      var data = sheet.getRange(startRow, 1, numRows, lastCol).getDisplayValues();
+      for (var i = 0; i < data.length; i++) {
+        if (data[i][0] || data[i][1]) {
+          var notaBbm = (data[i].length > 6 && data[i][6]) ? String(data[i][6]).trim() : "";
+          logsList.push({
+            tanggal: formatDateVal(data[i][0]),
+            armadaId: String(data[i][1] || data[i][4] || ""),
+            kmTerdetect: Number(data[i][2]) || 0,
+            kmTerdeteksi: Number(data[i][2]) || 0,
+            linkFoto: String(data[i][3] || data[i][8] || ""),
+            catatan: String(data[i][4] || data[i][10] || ""),
+            namaDriver: String(data[i][5] || data[i][3] || ""),
+            notaBbmUrl: notaBbm
+          });
+        }
+      }
+    }
+  }
+  return logsList;
+}
+
+function getBanArmada(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var banSheet = getSheetByGid(sheetMap, GID_BAN) || 
+                 getSheetByGid(ss, GID_BAN) || 
+                 getSheetByNameFromMap(ss, sheetMap, "BAN ARMADA") || 
+                 getSheetByNameFromMap(ss, sheetMap, "Ban armada") || 
+                 getSheetByNameFromMap(ss, sheetMap, "Ban Armada") || 
+                 getSheetByNameFromMap(ss, sheetMap, "BAN");
+  var banList = [];
+  if (banSheet) {
+    var data = banSheet.getDataRange().getValues();
+    if (data.length > 1) {
+      var colArmada = -1, colNopol = -1, colPosisi = -1, colTahun = -1, colCode = -1, colTanggal = -1, colNoSeri = -1, colBarcode = -1;
+      var colUkuran = -1, colMerk = -1, colKondisi = -1, colTekanan = -1, colKeterangan = -1;
+      var header = data[0];
+      if (header && header.length > 0) {
+        for (var c = 0; c < header.length; c++) {
+          var h = String(header[c] || "").trim().toLowerCase();
+          if (!h) continue;
+
+          if (h === "id armada" || h === "armada id" || h === "id_armada" || (h.indexOf("armada") > -1 && h.indexOf("posisi") === -1)) {
+            if (colArmada === -1) colArmada = c;
+          }
+          if (h.indexOf("posisi") > -1) {
+            if (colPosisi === -1) colPosisi = c;
+          }
+          if (h.indexOf("polisi") > -1 || h.indexOf("nopol") > -1) {
+            if (colNopol === -1) colNopol = c;
+          }
+          if (h.indexOf("barcode") > -1) {
+            colBarcode = c;
+          }
+          if (h === "tahun ban" || h === "tahun" || h.indexOf("tahun") > -1) {
+            if (colTahun === -1) colTahun = c;
+          }
+          if (h === "code ban" || h === "kode ban" || (h.indexOf("code") > -1 && h.indexOf("ban") > -1) || h.indexOf("code") > -1 || h.indexOf("kode") > -1) {
+            if (colCode === -1 && h.indexOf("barcode") === -1) colCode = c;
+          }
+          if (h === "tanggal update" || h.indexOf("tanggal") > -1 || h.indexOf("update") > -1) {
+            if (colTanggal === -1) colTanggal = c;
+          }
+          if (h === "no seri" || h === "no. seri" || h.indexOf("seri") > -1) {
+            if (colNoSeri === -1) colNoSeri = c;
+          }
+          if (h.indexOf("ukuran") > -1) {
+            if (colUkuran === -1) colUkuran = c;
+          }
+          if (h.indexOf("merk") > -1) {
+            if (colMerk === -1) colMerk = c;
+          }
+          if (h.indexOf("kondisi") > -1) {
+            if (colKondisi === -1) colKondisi = c;
+          }
+          if (h.indexOf("tekanan") > -1) {
+            if (colTekanan === -1) colTekanan = c;
+          }
+          if (h.indexOf("keterangan") > -1 || h.indexOf("catatan") > -1) {
+            if (colKeterangan === -1) colKeterangan = c;
+          }
+        }
+      }
+
+      // Fallbacks if not detected by header name
+      if (colArmada === -1) colArmada = 0;
+      if (colPosisi === -1) colPosisi = 1;
+      if (colTahun === -1) colTahun = 2;
+      if (colCode === -1) colCode = 3;
+      if (colTanggal === -1) colTanggal = 4;
+      if (colNoSeri === -1) colNoSeri = 5;
+      if (colBarcode === -1) colBarcode = 6; // Target column G (index 6)
+
+      var lastArmadaId = "";
+      for (var i = 1; i < data.length; i++) {
+        var r = data[i];
+        if (!r) continue;
+
+        var aId = (colArmada >= 0 && colArmada < r.length) ? String(r[colArmada] || "").trim() : "";
+        if (aId !== "") lastArmadaId = aId;
+        var effectiveArmadaId = aId || lastArmadaId;
+
+        var nPol = (colNopol >= 0 && colNopol < r.length) ? String(r[colNopol] || "").trim() : "";
+        var pos = (colPosisi >= 0 && colPosisi < r.length) ? String(r[colPosisi] || "").trim() : "";
+
+        if (!effectiveArmadaId && !nPol && !pos) continue;
+
+        var bCode = (colBarcode >= 0 && colBarcode < r.length) ? String(r[colBarcode] || "").trim() : "";
+        // Legacy fallback: if Barcode at colBarcode is empty, check column K (index 10)
+        if (!bCode && r.length > 10) {
+          var legacyVal = String(r[10] || "").trim();
+          if (legacyVal) bCode = legacyVal;
+        }
+
+        var nSeri = (colNoSeri >= 0 && colNoSeri < r.length) ? String(r[colNoSeri] || "").trim() : "";
+        var cCode = (colCode >= 0 && colCode < r.length) ? String(r[colCode] || "").trim() : "";
+        var tTahun = (colTahun >= 0 && colTahun < r.length) ? String(r[colTahun] || "").trim() : "";
+        var tTanggal = (colTanggal >= 0 && colTanggal < r.length) ? String(r[colTanggal] || "").trim() : "";
+
+        var bestBarcode = bCode || nSeri || cCode;
+
+        banList.push({
+          armadaId: effectiveArmadaId,
+          noPolisi: nPol,
+          posisi: pos,
+          barcode: bestBarcode,
+          noSeri: nSeri || bestBarcode,
+          codeBan: cCode || bestBarcode,
+          ukuran: (colUkuran >= 0 && colUkuran < r.length) ? String(r[colUkuran] || "") : "",
+          merk: (colMerk >= 0 && colMerk < r.length) ? String(r[colMerk] || "") : "",
+          kondisi: (colKondisi >= 0 && colKondisi < r.length) ? String(r[colKondisi] || "Bagus") : "Bagus",
+          tekanan: (colTekanan >= 0 && colTekanan < r.length) ? String(r[colTekanan] || "") : "",
+          keterangan: (colKeterangan >= 0 && colKeterangan < r.length) ? String(r[colKeterangan] || "") : "",
+          tahun: tTahun,
+          tanggalUpdate: tTanggal
+        });
+      }
+    }
+  }
+
+  // Fetch dedicated Aki sheet (GID_AKI)
+  var akiSheet = getSheetByGid(ss, GID_AKI) || 
+                 getSheetByGid(sheetMap, GID_AKI) || 
+                 getSheetByNameFromMap(ss, sheetMap, "AKI ARMADA") || 
+                 getSheetByNameFromMap(ss, sheetMap, "AKI") || 
+                 getSheetByNameFromMap(ss, sheetMap, "Aki Armada");
+  if (akiSheet) {
+    var akiData = akiSheet.getDataRange().getDisplayValues();
+    if (akiData.length > 1) {
+      var headerRowIdx = 0;
+      var colAId = 0, colANopol = 1, colATgl = 2, colAGanti = 3, colABarcode = 4, colAStatus = 5, colAMerk = -1;
+      
+      for (var hr = 0; hr < Math.min(10, akiData.length); hr++) {
+        var aHeader = akiData[hr];
+        if (!aHeader) continue;
+        var foundMatches = 0;
+        var tId = colAId, tNopol = colANopol, tTgl = colATgl, tGanti = colAGanti, tBarcode = colABarcode, tStatus = colAStatus, tMerk = colAMerk;
+        
+        for (var ac = 0; ac < aHeader.length; ac++) {
+          var ah = String(aHeader[ac] || "").toLowerCase().trim();
+          if (!ah) continue;
+          if (ah.indexOf("armada") > -1 || ah.indexOf("id") > -1) { tId = ac; foundMatches++; }
+          else if (ah.indexOf("polis") > -1 || ah.indexOf("nopol") > -1) { tNopol = ac; foundMatches++; }
+          else if (ah.indexOf("tanggal") > -1 || ah.indexOf("pasang") > -1) { tTgl = ac; foundMatches++; }
+          else if (ah.indexOf("ganti") > -1 || ah.indexOf("berikut") > -1) { tGanti = ac; foundMatches++; }
+          else if (ah.indexOf("barcode") > -1 || ah.indexOf("seri") > -1) { tBarcode = ac; foundMatches++; }
+          else if (ah.indexOf("status") > -1 || ah.indexOf("ket") > -1) { tStatus = ac; foundMatches++; }
+          else if (ah.indexOf("merk") > -1 || ah.indexOf("tipe") > -1) { tMerk = ac; foundMatches++; }
+        }
+        if (foundMatches >= 2) {
+          headerRowIdx = hr;
+          colAId = tId; colANopol = tNopol; colATgl = tTgl; colAGanti = tGanti; colABarcode = tBarcode; colAStatus = tStatus; colAMerk = tMerk;
+          break;
+        }
+      }
+
+      var armadaRefMap = {};
+      try {
+        var aSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+        if (aSheet) {
+          var aData = aSheet.getDataRange().getValues();
+          for (var arIdx = 1; arIdx < aData.length; arIdx++) {
+            var rArmId = String(aData[arIdx][0] || "").trim().toUpperCase();
+            var rNopol = String(aData[arIdx][1] || "").trim().toUpperCase();
+            if (rArmId) armadaRefMap[cleanArmadaKey(rArmId)] = { armadaId: rArmId, noPolisi: rNopol };
+            if (rNopol) armadaRefMap[cleanArmadaKey(rNopol)] = { armadaId: rArmId, noPolisi: rNopol };
+          }
+        }
+      } catch(errRef) {}
+
+      for (var j = headerRowIdx + 1; j < akiData.length; j++) {
+        var ar = akiData[j];
+        if (!ar) continue;
+        var akiArmadaId = String(ar[colAId] || "").trim();
+        var akiNoPol = String(ar[colANopol] || "").trim();
+
+        if (akiArmadaId.toLowerCase().indexOf("armada") > -1 || akiNoPol.toLowerCase().indexOf("polis") > -1) continue;
+        if (!akiArmadaId && !akiNoPol) continue;
+
+        var ref = armadaRefMap[cleanArmadaKey(akiArmadaId)] || armadaRefMap[cleanArmadaKey(akiNoPol)];
+        if (ref) {
+          if (!akiArmadaId) akiArmadaId = ref.armadaId;
+          if (!akiNoPol) akiNoPol = ref.noPolisi;
+        }
+
+        var akiTgl = String(ar[colATgl] || "").trim();
+        var akiGanti = String(ar[colAGanti] || "").trim();
+        var akiBarcode = String(ar[colABarcode] || "").trim();
+        var akiStatus = String(ar[colAStatus] || "").trim();
+        var akiMerk = (colAMerk > -1 && colAMerk < ar.length) ? String(ar[colAMerk] || "").trim() : "";
+        if (!akiMerk) akiMerk = "Aki Standard";
+
+        var calc = calculateAkiGantiDateAndStatus(akiTgl, akiStatus);
+        var finalGanti = akiGanti || calc.gantiDate;
+        var finalStatus = akiStatus || calc.status;
+        var finalBarcode = akiBarcode || "";
+
+        var newAkiItem = {
+          armadaId: akiArmadaId,
+          noPolisi: akiNoPol,
+          posisi: "AKI",
+          barcode: finalBarcode,
+          barcodeAki: finalBarcode,
+          noSeri: finalBarcode,
+          ukuran: "12V",
+          merk: akiMerk,
+          kondisi: akiTgl,
+          tanggalPasangAki: akiTgl,
+          tekanan: akiMerk,
+          keterangan: finalStatus,
+          tahun: akiTgl ? (akiTgl.split("/").pop().split("-")[0] || "2025") : "2025"
+        };
+
+        for (var idx = banList.length - 1; idx >= 0; idx--) {
+          if (String(banList[idx].posisi || "").trim().toUpperCase() === "AKI" &&
+              isArmadaMatch(banList[idx].armadaId, banList[idx].noPolisi, akiArmadaId, akiNoPol)) {
+            banList.splice(idx, 1);
+          }
+        }
+        banList.push(newAkiItem);
+      }
+    }
+  }
+
+  return banList;
+}
+
+function cleanArmadaKey(s) {
+  return String(s || "").toUpperCase().replace(/[\s\-\.]+/g, "");
+}
+
+function isArmadaMatch(rowArmadaId, rowNopol, targetArmadaId, targetNoPolisi) {
+  var cRowId = cleanArmadaKey(rowArmadaId);
+  var cRowPol = cleanArmadaKey(rowNopol);
+  var cTargetId = cleanArmadaKey(targetArmadaId);
+  var cTargetPol = cleanArmadaKey(targetNoPolisi);
+
+  if (cTargetId && cRowId && cRowId === cTargetId) return true;
+  if (cTargetPol && cRowPol && cRowPol === cTargetPol) return true;
+  if (cTargetId && cRowPol && cRowPol === cTargetId) return true;
+  if (cTargetPol && cRowId && cRowId === cTargetPol) return true;
+  return false;
 }
 
 /**
- * ============================================
- * GEMINI AI INTEGRATION - GOOGLE APPS SCRIPT
- * ============================================
+ * Hitung tanggal ganti aki berikutnya (2 tahun) dan status kelayakan aki
  */
+function calculateAkiGantiDateAndStatus(tglStr, userKeterangan) {
+  var userStatus = (userKeterangan && String(userKeterangan).trim().length > 0) ? String(userKeterangan).trim() : "";
 
-var GEMINI_API_KEY = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") || "";
-
-/**
- * Fungsi utama untuk memanggil Gemini API dengan konteks data armada
- */
-function callGeminiWithContext(chatMessage, spreadsheetId, passedApiKey) {
-  var apiKey = passedApiKey || GEMINI_API_KEY;
-  
-  if (!apiKey || apiKey === "" || apiKey === "MY_GEMINI_API_KEY") {
-    return { 
-      success: false, 
-      message: "API Key Gemini belum dikonfigurasi. Silakan isi API Key di Pengaturan aplikasi." 
+  if (!tglStr) {
+    return {
+      gantiDate: "",
+      status: userStatus || "Aman",
+      isDue: false
     };
   }
 
-  try {
-    // 1. Ambil semua data konteks dari spreadsheet
-    var contextData = buildArmadaContext(spreadsheetId);
-    
-    // 2. Buat prompt lengkap dengan konteks
-    var fullPrompt = buildGeminiPrompt(chatMessage, contextData);
-    
-    // 3. Panggil Gemini API
-    var result = callGeminiAPI(fullPrompt, apiKey);
-    
-    return { success: true, message: result };
-    
-  } catch (e) {
-    if (typeof Log === "function") {
-      Log("Gemini Error: " + e.toString());
+  var str = String(tglStr).trim();
+  var parts = str.split(/[\/\-\.]+/);
+  var d = null;
+
+  if (parts.length >= 3) {
+    var p0 = parseInt(parts[0], 10);
+    var p1 = parseInt(parts[1], 10);
+    var p2 = parseInt(parts[2], 10);
+
+    if (parts[0].length === 4) {
+      // yyyy-mm-dd
+      d = new Date(p0, p1 - 1, p2);
+    } else if (parts[2].length === 4) {
+      // mm/dd/yyyy or dd/mm/yyyy
+      if (p0 > 12) {
+        // dd/mm/yyyy
+        d = new Date(p2, p1 - 1, p0);
+      } else {
+        // mm/dd/yyyy
+        d = new Date(p2, p0 - 1, p1);
+      }
     }
-    return { success: false, message: "Gemini Apps Script Error: " + e.toString() };
   }
+
+  if (!d || isNaN(d.getTime())) {
+    d = new Date(str);
+  }
+
+  if (!d || isNaN(d.getTime())) {
+    return {
+      gantiDate: str + " + 2 Tahun",
+      status: userStatus || "Aman",
+      isDue: false
+    };
+  }
+
+  // Calculate 2 years date
+  var gantiD = new Date(d.getTime());
+  gantiD.setFullYear(gantiD.getFullYear() + 2);
+
+  var now = new Date();
+  var isDue = now.getTime() >= gantiD.getTime();
+
+  var gMonth = gantiD.getMonth() + 1;
+  var gDay = gantiD.getDate();
+  var gYear = gantiD.getFullYear();
+  var gantiDateFormatted = gMonth + "/" + gDay + "/" + gYear;
+
+  var calcStatus = userStatus || (isDue ? "PERLU GANTI (SUDAH 2 TAHUN)" : "AMAN");
+
+  return {
+    gantiDate: gantiDateFormatted,
+    status: calcStatus,
+    isDue: isDue
+  };
 }
 
-/**
- * Mengumpulkan data armada dari semua sheet untuk konteks AI
- */
-function buildArmadaContext(spreadsheetId) {
-  var ss = SpreadsheetApp.openById(spreadsheetId || SPREADSHEETS.ARMADA);
-  var context = [];
-  
-  // Ambil data Armada
+// ============================================
+// AUTHENTICATION (validateLogin)
+// ============================================
+
+function validateLogin(contents, ss, sheetMap) {
+  var driverIdOrName = String(contents.driverName || contents.username || contents.driverId || "").trim();
+  var pin = String(contents.pin || "").trim();
+  if (!driverIdOrName || !pin) {
+    return { success: false, driverId: null, driverName: null, message: "ID Driver dan PIN wajib diisi." };
+  }
+  var sheet = getDriverSheet(ss, sheetMap);
+  if (!sheet) {
+    return { success: false, driverId: null, driverName: null, message: "Sheet Daftar Driver tidak ditemukan di spreadsheet." };
+  }
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    return { success: false, driverId: null, driverName: null, message: "Data Driver di spreadsheet kosong." };
+  }
+
+  var headers = data[0].map(function(h) {
+    return String(h).trim().toLowerCase().replace(/[\s_\-]+/g, "");
+  });
+
+  var idCol = -1, nameCol = -1, pinCol = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var h = headers[c];
+    if (idCol === -1 && (h === "iddriver" || h === "id" || h === "nik" || h === "nip" || h === "kodedriver" || h === "kode")) idCol = c;
+    if (nameCol === -1 && (h === "namadriver" || h === "nama" || h === "namalengkap")) nameCol = c;
+    if (pinCol === -1 && (h === "pin" || h === "pinkeamanan" || h === "pass" || h === "password")) pinCol = c;
+  }
+  if (idCol === -1) idCol = 0;
+  if (nameCol === -1) nameCol = (idCol === 0 ? 1 : 0);
+  if (pinCol === -1) pinCol = 2;
+
+  var targetClean = driverIdOrName.toLowerCase().replace(/[\s_\-]+/g, "");
+
+  for (var i = 1; i < data.length; i++) {
+    var idVal = String(data[i][idCol] !== undefined && data[i][idCol] !== null ? data[i][idCol] : "").trim();
+    var nameVal = String(data[i][nameCol] !== undefined && data[i][nameCol] !== null ? data[i][nameCol] : "").trim();
+    var rawPin = data[i][pinCol] !== undefined && data[i][pinCol] !== null ? String(data[i][pinCol]).trim() : "";
+    if (rawPin.indexOf(".") !== -1) {
+      rawPin = rawPin.split(".")[0];
+    }
+
+    var cleanId = idVal.toLowerCase().replace(/[\s_\-]+/g, "");
+    var cleanName = nameVal.toLowerCase().replace(/[\s_\-]+/g, "");
+
+    if (cleanId === targetClean || cleanName === targetClean || idVal.toLowerCase() === driverIdOrName.toLowerCase() || nameVal.toLowerCase() === driverIdOrName.toLowerCase()) {
+      if (!rawPin || rawPin === pin || rawPin === pin.split(".")[0]) {
+        return { success: true, driverId: idVal || driverIdOrName, driverName: nameVal || driverIdOrName, message: "Login Berhasil" };
+      } else {
+        return { success: false, driverId: idVal, driverName: nameVal, message: "PIN Keamanan salah." };
+      }
+    }
+  }
+
+  return { success: false, driverId: null, driverName: null, message: "ID Driver atau Nama '" + driverIdOrName + "' tidak terdaftar di sheet." };
+}
+
+// ============================================
+// CORE BUSINESS LOGIC (submitLog, submitService, updateBan, updateFotoArmada, submitTerkirim)
+// ============================================
+
+function submitLog(contents, ss, sheetMap) {
+  var logData = contents.logData || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var armadaId = String(logData.armadaId || logData.nopol || "").trim().toUpperCase();
+  var kmVal = Number(logData.kmTerdeteksi || logData.kmSaatIni || logData.kmTerdetect || logData.km || 0);
+  var driverName = String(logData.driverName || logData.namaDriver || logData.driver || "").trim();
+  var catatan = String(logData.catatan || logData.catattan || logData.keterangan || "").trim();
+
+  if (!armadaId) return { success: false, message: "Validasi Gagal: ID Armada wajib diisi!" };
+  if (isNaN(kmVal) || kmVal <= 0) return { success: false, message: "Validasi Gagal: Angka KM saat ini tidak valid!" };
+
+  var lock = LockService.getScriptLock();
   try {
-    var armadaSheet = ss.getSheetByName("Armada") || ss.getSheets()[0];
+    lock.waitLock(10000);
+
+    var targetGid = logData.sheetId || contents.sheetId || GID_ODOMETER_KM;
+    var logSheet = getSheetByGid(sheetMap, targetGid)
+                || getSheetByGid(sheetMap, GID_ODOMETER_KM)
+                || getSheetByNameFromMap(ss, sheetMap, "log_harian")
+                || getSheetByNameFromMap(ss, sheetMap, "LOG_HARIAN");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("log_harian");
+      logSheet.appendRow(["Tanggal", "Id armada", "KM terdeteksi", "link foto", "Catatan", "Nama Driver"]);
+    }
+
+    var armadaSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+
+    var dateStr = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+    var photoUrl = "";
+    
+    var b64Photo = logData.base64Photo || logData.fotoBase64 || logData.photoBase64 || logData.base64 || logData.image || logData.foto;
+    if (b64Photo) {
+      var pName = logData.photoName || logData.fileName || ("KM_" + armadaId + "_" + Date.now() + ".jpg");
+      photoUrl = saveImageToDrive(b64Photo, pName, "Foto Odometer", logData.photoMimeType || "image/jpeg");
+    } else if (logData.linkFoto || logData.url || logData.photoUrl || logData.fotoUrl) {
+      photoUrl = logData.linkFoto || logData.url || logData.photoUrl || logData.fotoUrl;
+    }
+
+    // 2. Nota BBM (kolom G) - field terpisah
+    var notaBbmUrl = "";
+    var b64Nota = logData.notaBbmBase64 || contents.notaBbmBase64 || "";
+    var notaFileName = logData.notaBbmFileName || contents.notaBbmFileName || "";
+    var notaMimeType = logData.notaBbmMimeType || contents.notaBbmMimeType || "";
+    if (b64Nota && typeof b64Nota === "string" && b64Nota.trim().length > 0) {
+      try {
+        notaBbmUrl = saveNotaBbmToDrive(b64Nota, armadaId, notaFileName, notaMimeType);
+      } catch(errNota) {
+        return { success: false, message: "Gagal menyimpan nota BBM: " + errNota.message };
+      }
+    } else if (logData.notaBbmUrl || contents.notaBbmUrl) {
+      notaBbmUrl = String(logData.notaBbmUrl || contents.notaBbmUrl).trim();
+    }
+
+    var lastCol = logSheet.getLastColumn();
+    var lastRow = logSheet.getLastRow();
+
+    if (lastRow < 1 || lastCol < 6) {
+      logSheet.getRange(1, 1, 1, 7).setValues([["Tanggal", "Id armada", "KM terdeteksi", "link foto", "Catatan", "Nama Driver", "URL NOTA BBM"]]);
+      lastCol = 7;
+    } else {
+      var headerVals = logSheet.getRange(1, 1, 1, Math.max(lastCol, 7)).getValues()[0];
+      var headerG = String(headerVals[6] || "").trim();
+      if (!headerG) {
+        logSheet.getRange(1, 7).setValue("URL NOTA BBM");
+        if (lastCol < 7) lastCol = 7;
+      }
+    }
+
+    // Row mapping: A=Tanggal, B=Id armada, C=KM terdeteksi, D=link foto, E=Catatan, F=Nama Driver, G=URL NOTA BBM
+    var rowToAppend = [
+      dateStr,        // A: Tanggal
+      armadaId,       // B: Id armada
+      kmVal,          // C: KM terdeteksi
+      photoUrl,       // D: link foto (Odometer)
+      catatan,        // E: Catatan
+      driverName,     // F: Nama Driver
+      notaBbmUrl      // G: URL NOTA BBM
+    ];
+
+    if (lastCol > 7) {
+      var paddedRow = new Array(lastCol).fill("");
+      for (var p = 0; p < 7; p++) {
+        paddedRow[p] = rowToAppend[p];
+      }
+      logSheet.appendRow(paddedRow);
+    } else {
+      logSheet.appendRow(rowToAppend);
+    }
+
+    var sisaKm = 1000;
+    var serviceAlert = false;
+    var threshold = 1000;
+
     if (armadaSheet) {
-      var armadaData = armadaSheet.getDataRange().getValues();
-      context.push("=== DATA ARMADA ===");
-      for (var i = 1; i < armadaData.length && i <= 20; i++) {
-        if (armadaData[i][0]) {
-          context.push(
-            "ID: " + armadaData[i][0] + 
-            " | Nopol: " + (armadaData[i][1] || "-") +
-            " | KM: " + (armadaData[i][2] || "0") +
-            " | Sisa Servis: " + (armadaData[i][6] || "0") + " km" +
-            " | Status: " + (armadaData[i][7] || "-")
-          );
+      var aRows = armadaSheet.getDataRange().getValues();
+      for (var i = 1; i < aRows.length; i++) {
+        var rowId = String(aRows[i][0] || "").trim().toUpperCase();
+        var rowPol = String(aRows[i][1] || "").trim().toUpperCase();
+        if (rowId === armadaId || rowPol === armadaId) {
+          var targetRow = aRows[i];
+          while (targetRow.length < 11) { targetRow.push(""); }
+
+          targetRow[2] = kmVal; // Column C (index 2): KM SAAT INI
+          
+          var nextService = Number(targetRow[5]) || ((Number(targetRow[3]) || 0) + 5000);
+          sisaKm = nextService - kmVal;
+          targetRow[6] = sisaKm; // Column G (index 6): SISA KM
+
+          if (photoUrl) targetRow[9] = photoUrl; // Column J (index 9)
+          if (catatan) targetRow[10] = catatan; // Column K (index 10)
+
+          var statusStr = "AMAN";
+          if (sisaKm < 0) statusStr = "🚨 HARUS SERVICE";
+          else if (sisaKm < threshold) statusStr = "⚠️ SERVICE <1000 KM";
+          targetRow[7] = statusStr; // Column H (index 7)
+
+          batchWriteRow(armadaSheet, i + 1, 1, targetRow);
+
+          if (sisaKm < threshold) {
+            serviceAlert = true;
+            sendAdminEmail(armadaId, sisaKm, driverName, kmVal, photoUrl);
+          }
+          break;
         }
       }
     }
-  } catch(e) {}
-  
-  // Ambil data Driver
+
+    return {
+      success: true,
+      linkFoto: photoUrl,
+      notaBbmUrl: notaBbmUrl || "",
+      sisaKm: sisaKm,
+      serviceAlert: serviceAlert,
+      message: "Log harian Odometer berhasil disimpan!"
+    };
+  } catch(e) {
+    return { success: false, message: "Gagal menyimpan log harian: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function submitService(contents, ss, sheetMap) {
+  var serviceData = contents.serviceData || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var armadaId = String(serviceData.armadaId || "").trim().toUpperCase();
+  var kmServis = Number(serviceData.kmServis || serviceData.kmServiceTerakhir || serviceData.kmSaatIni || 0);
+  var allowLowerKm = serviceData.allowLowerKm === true || serviceData.allowLowerKm === "true";
+  var correctionReason = String(serviceData.correctionReason || "").trim();
+
+  if (!armadaId) return { success: false, message: "Validasi Gagal: ID Armada wajib diisi!" };
+  if (isNaN(kmServis) || kmServis <= 0) return { success: false, message: "Validasi Gagal: Angka KM Service tidak valid!" };
+
+  var lock = LockService.getScriptLock();
   try {
-    var driverSheet = ss.getSheetByName("Drivers") || ss.getSheetByName("Daftar_Driver");
-    if (driverSheet) {
-      var driverData = driverSheet.getDataRange().getValues();
-      context.push("\n=== DATA DRIVER ===");
-      for (var i = 1; i < driverData.length && i <= 20; i++) {
-        if (driverData[i][1]) {
-          context.push("ID: " + driverData[i][0] + " | Nama: " + driverData[i][1]);
-        }
+    lock.waitLock(10000);
+
+    var armadaSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (!armadaSheet) return { success: false, message: "Sheet Armada tidak ditemukan!" };
+
+    var aRows = armadaSheet.getDataRange().getValues();
+    var foundIdx = -1;
+    var currentKm = 0;
+    var noPolisi = "";
+    var intervalService = 5000;
+
+    for (var i = 1; i < aRows.length; i++) {
+      var rowId = String(aRows[i][0] || "").trim().toUpperCase();
+      var rowPol = String(aRows[i][1] || "").trim().toUpperCase();
+      if (rowId === armadaId || rowPol === armadaId) {
+        foundIdx = i;
+        currentKm = Number(aRows[i][2]) || 0; // Col C: KM Saat Ini
+        noPolisi = String(aRows[i][1] || "").trim();
+        intervalService = Number(aRows[i][4]) || 5000;
+        break;
       }
     }
-  } catch(e) {}
-  
-  // Ambil data Log Harian (7 hari terakhir)
+
+    if (foundIdx === -1) {
+      return { success: false, message: "Armada tidak ditemukan dengan ID: " + armadaId };
+    }
+
+    // Validation for lower KM
+    if (kmServis < currentKm) {
+      if (!allowLowerKm) {
+        return { success: false, message: "KM lebih rendah dari KM saat ini. Aktifkan Mode Koreksi Odometer hanya jika ini adalah koreksi data yang sah." };
+      }
+      if (correctionReason.length < 10) {
+        return { success: false, message: "Alasan koreksi odometer wajib diisi minimal 10 karakter!" };
+      }
+
+      // Log to KOREKSI KM sheet
+      var koreksiSheet = ss.getSheetByName("KOREKSI KM");
+      if (!koreksiSheet) {
+        koreksiSheet = ss.insertSheet("KOREKSI KM");
+        koreksiSheet.appendRow([
+          "Timestamp",
+          "ID Koreksi",
+          "ID Armada",
+          "No Polisi",
+          "KM Sebelum",
+          "KM Sesudah",
+          "Selisih KM",
+          "Alasan Koreksi",
+          "ID/Nama Driver",
+          "Jenis Koreksi",
+          "Sumber"
+        ]);
+      }
+
+      var timestamp = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+      var idKoreksi = "CORR_" + new Date().getTime();
+      var driverInfo = String(serviceData.driverName || serviceData.driver || "Driver").trim();
+      koreksiSheet.appendRow([
+        timestamp,
+        idKoreksi,
+        armadaId,
+        noPolisi,
+        currentKm,
+        kmServis,
+        kmServis - currentKm,
+        correctionReason,
+        driverInfo,
+        "ODOMETER_CORRECTION",
+        "Android App H033"
+      ]);
+    }
+
+    var kmServiceBerikutnya = kmServis + intervalService;
+    var sisaKm = kmServiceBerikutnya - kmServis;
+
+    var serviceSlice = armadaSheet.getRange(foundIdx + 1, 3, 1, 6).getValues();
+    serviceSlice[0][0] = kmServis; // Col C: KM SAAT INI
+    serviceSlice[0][1] = kmServis; // Col D: KM SERVICE TERAKHIR
+    serviceSlice[0][3] = kmServiceBerikutnya; // Col F: KM SERVICE BERIKUTNYA
+    serviceSlice[0][4] = sisaKm; // Col G: SISA KM
+    serviceSlice[0][5] = "🟢 AMAN"; // Col H: STATUS
+
+    batchWriteRow(armadaSheet, foundIdx + 1, 3, serviceSlice[0]);
+
+    if (serviceData.catatan !== undefined) {
+      batchWriteRow(armadaSheet, foundIdx + 1, 11, [serviceData.catatan || ""]);
+    }
+
+    var successMsg = allowLowerKm ? "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." : ("Data servis " + armadaId + " berhasil diperbarui. Status armada kembali AMAN!");
+    return { success: true, message: successMsg };
+  } catch(e) {
+    return { success: false, message: "Gagal menyimpan service log: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function submitCatatanDriver(contents, ss, sheetMap) {
+  var data = contents.request || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var armadaId = String(data.armadaId || "").trim().toUpperCase();
+  var driverName = String(data.driverName || data.driver || "").trim();
+  var catatan = String(data.catatan || "").trim();
+  var tanggal = String(data.tanggal || Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm")).trim();
+
+  if (!armadaId) return { success: false, message: "Validasi Gagal: ID Armada wajib diisi!" };
+
+  var lock = LockService.getScriptLock();
   try {
-    var logSheet = ss.getSheetByName("Logs") || ss.getSheetByName("log_harian") || ss.getSheetByName("LogHarian");
-    if (logSheet) {
-      var logData = logSheet.getDataRange().getValues();
-      context.push("\n=== LOG HARIAN TERAKHIR ===");
-      var startIdx = Math.max(1, logData.length - 10);
-      for (var i = startIdx; i < logData.length; i++) {
-        if (logData[i][1]) {
-          context.push(
-            "Tanggal: " + logData[i][0] + 
-            " | Armada: " + logData[i][1] +
-            " | KM: " + logData[i][2] +
-            " | Driver: " + (logData[i][5] || "-")
-          );
+    lock.waitLock(10000);
+
+    var armadaSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (armadaSheet) {
+      var aRows = armadaSheet.getDataRange().getValues();
+      for (var i = 1; i < aRows.length; i++) {
+        var rowId = String(aRows[i][0] || "").trim().toUpperCase();
+        var rowPol = String(aRows[i][1] || "").trim().toUpperCase();
+        if (rowId === armadaId || rowPol === armadaId) {
+          batchWriteRow(armadaSheet, i + 1, 11, [catatan]);
+          break;
         }
       }
     }
-  } catch(e) {}
-  
-  return context.join("\n");
-}
 
-/**
- * Membangun prompt lengkap untuk Gemini
- */
-function buildGeminiPrompt(userMessage, contextData) {
-  var systemPrompt = [
-    "Kamu adalah JONI, asisten manajemen armada kendaraan komersial HUB Kediri.",
-    "",
-    "KARAKTER:",
-    "- Tegas, profesional, tidak basa-basi",
-    "- Bahasa Indonesia padat dan jelas",
-    "- Gunakan istilah teknis otomotif yang tepat",
-    "- Selalu akhiri dengan rekomendasi tindakan konkret",
-    "",
-    "KEAHLIAN KENDARAAN:",
-    "HINO PICKUP: Oli & filter tiap 10.000-15.000 km, fuel filter 20.000-30.000 km, air filter 15.000 km, transmisi 40.000-60.000 km, coolant 60.000 km, rem 10.000 km, ban 15.000-20.000 km.",
-    "DAIHATSU PICKUP: Oli tiap 3.000-5.000 km, coolant bulanan, rem 15.000 km, ban 8.000 km, aki 3-4 tahun, filter udara rutin, busi tiap service besar, belt tiap tahun.",
-    "",
-    "ATURAN:",
-    "1. JANGAN pernah buat data palsu",
-    "2. JANGAN beri saran mekanik berbahaya",
-    "3. Format tanggal: DD/MM/YYYY",
-    "4. Format uang: Rp X.XXX.XXX",
-    "5. Jika data tidak tersedia, katakan 'Data tidak tersedia di sistem.'",
-    ""
-  ].join("\n");
-  
-  return systemPrompt + "\n" + contextData + "\n\n=== PERTANYAAN USER ===\n" + userMessage;
-}
-
-/**
- * Memanggil Gemini API langsung
- */
-function callGeminiAPI(prompt, apiKey) {
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey;
-  
-  var payload = {
-    contents: [{
-      parts: [{ text: prompt }]
-    }],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 2048,
-      topP: 0.95
+    var logSheet = getSheetByNameFromMap(ss, sheetMap, "CATATAN_DRIVER") || 
+                   getSheetByNameFromMap(ss, sheetMap, "catatan_driver") || 
+                   getSheetByNameFromMap(ss, sheetMap, "LOG_CATATAN");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("CATATAN_DRIVER");
+      logSheet.appendRow(["Tanggal", "ID Armada", "Nama Driver", "Catatan / Keluhan", "Status"]);
     }
-  };
-  
-  var options = {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
-  
-  var response = UrlFetchApp.fetch(url, options);
-  var responseCode = response.getResponseCode();
-  var responseText = response.getContentText();
-  
-  if (responseCode !== 200) {
-    throw new Error("Gemini API Error " + responseCode + ": " + responseText);
+    logSheet.appendRow([tanggal, armadaId, driverName, catatan, "Aktif"]);
+
+    return { success: true, message: "Catatan driver armada " + armadaId + " berhasil disimpan ke Google Spreadsheet!" };
+  } catch(e) {
+    return { success: false, message: "Gagal menyimpan catatan driver: " + e.toString() };
+  } finally {
+    lock.releaseLock();
   }
-  
-  var result = JSON.parse(responseText);
-  
-  // Handle safety filter
-  if (result.promptFeedback && result.promptFeedback.blockReason) {
-    return "Maaf, saya tidak dapat menjawab pertanyaan tersebut karena alasan keamanan (" + result.promptFeedback.blockReason + ").";
-  }
-  
-  if (!result.candidates || result.candidates.length === 0) {
-    throw new Error("Respons Gemini kosong");
-  }
-  
-  var candidate = result.candidates[0];
-  
-  // Handle finish reason
-  if (candidate.finishReason && candidate.finishReason !== "STOP") {
-    if (typeof Log === "function") {
-      Log("Gemini finish reason: " + candidate.finishReason);
-    }
-  }
-  
-  return candidate.content.parts[0].text;
 }
 
-/**
- * Format standard output JSON response dengan dukungan CORS secara default
- */
-function jsonResponse(obj) {
-  var output = ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+function clearCatatanDriver(contents, ss, sheetMap) {
+  var data = contents.request || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var armadaId = String(data.armadaId || "").trim().toUpperCase();
+  if (!armadaId) return { success: false, message: "Validasi Gagal: ID Armada wajib diisi!" };
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    var armadaSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (armadaSheet) {
+      var aRows = armadaSheet.getDataRange().getValues();
+      for (var i = 1; i < aRows.length; i++) {
+        var rowId = String(aRows[i][0] || "").trim().toUpperCase();
+        var rowPol = String(aRows[i][1] || "").trim().toUpperCase();
+        if (rowId === armadaId || rowPol === armadaId) {
+          batchWriteRow(armadaSheet, i + 1, 11, [""]);
+          break;
+        }
+      }
+    }
+
+    return { success: true, message: "Catatan armada " + armadaId + " berhasil dibersihkan dari Google Spreadsheet!" };
+  } catch(e) {
+    return { success: false, message: "Gagal membersihkan catatan: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateAki(contents, ss, sheetMap) {
+  var data = contents.akiData || contents.banData || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var targetArmadaId = String(data.armadaId || contents.armadaId || "").trim().toUpperCase();
+  var targetNoPolisi = String(data.noPolisi || contents.noPolisi || data.noPol || "").trim().toUpperCase();
+  var newBarcode = String(data.barcode || data.barcodeAki || contents.barcode || "").trim();
+  var newTanggalPasang = String(data.tanggalPasangAki || data.kondisi || contents.kondisi || "").trim();
+  var newMerk = String(data.merk || data.tekanan || contents.merk || "").trim();
+  var newStatus = String(data.status || data.keterangan || contents.keterangan || "AMAN").trim();
+
+  if (!targetArmadaId) return { success: false, message: "Validasi Gagal: ID Armada wajib diisi!" };
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    var sheet = getSheetByGid(ss, GID_AKI) || 
+                getSheetByGid(sheetMap, GID_AKI) || 
+                getSheetByNameFromMap(ss, sheetMap, "AKI ARMADA") || 
+                getSheetByNameFromMap(ss, sheetMap, "AKI") || 
+                getSheetByNameFromMap(ss, sheetMap, "Aki Armada") || 
+                getSheetByNameFromMap(ss, sheetMap, "Aki");
+
+    if (!sheet) {
+      sheet = ss.insertSheet("AKI ARMADA");
+      sheet.appendRow(["ID ARMADA", "NO POLIS", "TANGGAL PASANG AKI", "GANTI AKI BERIKUTNYA", "BARCODE", "STATUS", "MERK"]);
+    }
+
+    var rows = sheet.getDataRange().getValues();
+    var headerRowIdx = 0;
+    var colArmada = 0, colNopol = 1, colTanggal = 2, colGanti = 3, colBarcode = 4, colStatus = 5, colMerk = 6;
+
+    if (rows.length > 0) {
+      for (var hr = 0; hr < Math.min(10, rows.length); hr++) {
+        var header = rows[hr];
+        if (!header) continue;
+        var foundMatches = 0;
+        var tArm = colArmada, tNop = colNopol, tTgl = colTanggal, tGanti = colGanti, tBar = colBarcode, tStat = colStatus, tMrk = colMerk;
+        for (var c = 0; c < header.length; c++) {
+          var h = String(header[c] || "").toLowerCase().trim();
+          if (h.indexOf("armada") > -1 || h.indexOf("id") > -1) { tArm = c; foundMatches++; }
+          else if (h.indexOf("polis") > -1 || h.indexOf("nopol") > -1) { tNop = c; foundMatches++; }
+          else if (h.indexOf("tanggal") > -1 || h.indexOf("pasang") > -1) { tTgl = c; foundMatches++; }
+          else if (h.indexOf("ganti") > -1 || h.indexOf("berikut") > -1) { tGanti = c; foundMatches++; }
+          else if (h.indexOf("barcode") > -1 || h.indexOf("seri") > -1) { tBar = c; foundMatches++; }
+          else if (h.indexOf("status") > -1 || h.indexOf("ket") > -1) { tStat = c; foundMatches++; }
+          else if (h.indexOf("merk") > -1 || h.indexOf("tipe") > -1) { tMrk = c; foundMatches++; }
+        }
+        if (foundMatches >= 2) {
+          headerRowIdx = hr;
+          colArmada = tArm; colNopol = tNop; colTanggal = tTgl; colGanti = tGanti; colBarcode = tBar; colStatus = tStat; colMerk = tMrk;
+          break;
+        }
+      }
+
+      if (colMerk === -1) {
+        colMerk = 6;
+        sheet.getRange(headerRowIdx + 1, 7).setValue("MERK");
+      }
+    }
+
+    var calc = calculateAkiGantiDateAndStatus(newTanggalPasang, newStatus);
+    var gantiDateVal = calc.gantiDate;
+    var statusVal = calc.status;
+
+    var updated = false;
+    if (rows.length > headerRowIdx + 1) {
+      for (var i = headerRowIdx + 1; i < rows.length; i++) {
+        var rowArmadaId = String(rows[i][colArmada] || "").trim().toUpperCase();
+        var rowNopol = String(rows[i][colNopol] || "").trim().toUpperCase();
+
+        if (isArmadaMatch(rowArmadaId, rowNopol, targetArmadaId, targetNoPolisi)) {
+          var targetRow = rows[i];
+          var maxColIndex = Math.max(5, colMerk);
+          while (targetRow.length <= maxColIndex) { targetRow.push(""); }
+
+          if (targetArmadaId) targetRow[colArmada] = targetArmadaId;
+          if (targetNoPolisi) targetRow[colNopol] = targetNoPolisi;
+          if (newTanggalPasang) targetRow[colTanggal] = newTanggalPasang;
+          targetRow[colGanti] = gantiDateVal;
+          if (newBarcode) targetRow[colBarcode] = newBarcode;
+          targetRow[colStatus] = statusVal;
+          if (newMerk) targetRow[colMerk] = newMerk;
+
+          batchWriteRow(sheet, i + 1, 1, targetRow);
+          updated = true;
+          break;
+        }
+      }
+    }
+
+    if (!updated) {
+      var maxColIndex = Math.max(5, colMerk);
+      var newRow = [];
+      for (var c = 0; c <= maxColIndex; c++) { newRow.push(""); }
+      newRow[colArmada] = targetArmadaId;
+      newRow[colNopol] = targetNoPolisi;
+      newRow[colTanggal] = newTanggalPasang;
+      newRow[colGanti] = gantiDateVal;
+      newRow[colBarcode] = newBarcode;
+      newRow[colStatus] = statusVal;
+      newRow[colMerk] = newMerk || "Aki Standard";
+      sheet.appendRow(newRow);
+    }
+
+    return {
+      success: true,
+      message: "Data AKI " + targetArmadaId + " berhasil disimpan ke Google Sheets (GID 1886867333)!"
+    };
+  } catch(e) {
+    return { success: false, message: "Gagal memperbarui data aki: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateBan(contents, ss, sheetMap) {
+  var data = contents.banData || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  
+  var armadaId = String(data.armadaId || contents.armadaId || "").trim().toUpperCase();
+  var posisi = String(data.posisi || contents.posisi || "").trim();
+  var tahunBan = String(data.tahunBan || data.tahun || contents.tahunBan || contents.tahun || "").trim();
+  var codeBan = String(data.codeBan || data.kodeBan || contents.codeBan || contents.kodeBan || "").trim();
+  var noSeri = String(data.noSeri || contents.noSeri || "").trim();
+  var barcode = String(data.barcode || contents.barcode || "").trim();
+
+  // Cross-fill barcode/codeBan/noSeri if only one is provided
+  if (barcode && !codeBan) codeBan = barcode;
+  if (barcode && !noSeri) noSeri = barcode;
+  if (!barcode && (codeBan || noSeri)) barcode = codeBan || noSeri;
+
+  var sheet = getSheetByGid(sheetMap, GID_BAN) || 
+              getSheetByGid(ss, GID_BAN) || 
+              getSheetByNameFromMap(ss, sheetMap, "BAN ARMADA") || 
+              getSheetByNameFromMap(ss, sheetMap, "Ban armada") || 
+              getSheetByNameFromMap(ss, sheetMap, "Ban Armada") || 
+              getSheetByNameFromMap(ss, sheetMap, "BAN");
+  
+  if (!sheet) {
+    sheet = ss.insertSheet("BAN ARMADA");
+    sheet.appendRow(["ID ARMADA", "POSISI", "TAHUN BAN", "CODE BAN", "TANGGAL UPDATE", "No seri", "Barcode"]);
+  }
+
+  var dataRange = sheet.getDataRange().getValues();
+  var headers = dataRange[0] || [];
+  
+  // Dynamic header mapping
+  var colMap = {
+    armada: -1,
+    posisi: -1,
+    tahun: -1,
+    code: -1,
+    tanggal: -1,
+    seri: -1,
+    barcode: -1
+  };
+
+  if (headers && headers.length > 0) {
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c] || "").trim().toLowerCase();
+      if (!h) continue;
+
+      if (h === "id armada" || h === "armada id" || h === "id_armada" || (h.indexOf("armada") > -1 && h.indexOf("posisi") === -1)) {
+        if (colMap.armada === -1) colMap.armada = c;
+      }
+      if (h.indexOf("posisi") > -1) {
+        if (colMap.posisi === -1) colMap.posisi = c;
+      }
+      if (h === "tahun ban" || h === "tahun" || h.indexOf("tahun") > -1) {
+        if (colMap.tahun === -1) colMap.tahun = c;
+      }
+      if (h === "code ban" || h === "kode ban" || (h.indexOf("code") > -1 && h.indexOf("ban") > -1) || h.indexOf("code") > -1 || h.indexOf("kode") > -1) {
+        if (colMap.code === -1 && h.indexOf("barcode") === -1) colMap.code = c;
+      }
+      if (h === "tanggal update" || h.indexOf("tanggal") > -1 || h.indexOf("update") > -1) {
+        if (colMap.tanggal === -1) colMap.tanggal = c;
+      }
+      if (h === "no seri" || h === "no. seri" || h.indexOf("seri") > -1) {
+        if (colMap.seri === -1) colMap.seri = c;
+      }
+      if (h.indexOf("barcode") > -1) {
+        colMap.barcode = c;
+      }
+    }
+  }
+
+  // Fallbacks if not matched by headers
+  if (colMap.armada === -1) colMap.armada = 0;
+  if (colMap.posisi === -1) colMap.posisi = 1;
+  if (colMap.tahun === -1) colMap.tahun = 2;
+  if (colMap.code === -1) colMap.code = 3;
+  if (colMap.tanggal === -1) colMap.tanggal = 4;
+  if (colMap.seri === -1) colMap.seri = 5;
+  if (colMap.barcode === -1) colMap.barcode = 6;
+
+  // Ensure column G / colMap.barcode header is present if missing or sheet has fewer columns
+  if (sheet.getMaxColumns() < colMap.barcode + 1) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), (colMap.barcode + 1) - sheet.getMaxColumns());
+  }
+  var barcodeHeaderVal = sheet.getRange(1, colMap.barcode + 1).getValue();
+  if (!barcodeHeaderVal || String(barcodeHeaderVal).trim() === "") {
+    sheet.getRange(1, colMap.barcode + 1).setValue("Barcode");
+  }
+
+  var targetRow = -1;
+  var lastArmada = "";
+  
+  // Scanning data with forward-fill (handling merged cells)
+  for (var i = 1; i < dataRange.length; i++) {
+    var cellArmada = (colMap.armada >= 0 && colMap.armada < dataRange[i].length) ? String(dataRange[i][colMap.armada] || "").trim().toUpperCase() : "";
+    if (cellArmada !== "") {
+      lastArmada = cellArmada;
+    }
+    var currentArmada = cellArmada || lastArmada;
+    var currentPosisi = (colMap.posisi >= 0 && colMap.posisi < dataRange[i].length) ? String(dataRange[i][colMap.posisi] || "").trim() : "";
     
-  // Google Apps Script Web Apps secara default menyertakan header CORS 
-  // (Access-Control-Allow-Origin: *) pada semua respons JSON dari ContentService.
-  return output;
+    if (currentArmada === armadaId && currentPosisi.toLowerCase() === posisi.toLowerCase()) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+  
+  var timestamp = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd HH:mm:ss");
+  
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    if (targetRow !== -1) {
+      // UPDATE specific columns safely without overwriting other columns
+      if (tahunBan) sheet.getRange(targetRow, colMap.tahun + 1).setValue(tahunBan);
+      if (codeBan) sheet.getRange(targetRow, colMap.code + 1).setValue(codeBan);
+      if (noSeri) sheet.getRange(targetRow, colMap.seri + 1).setValue(noSeri);
+      if (barcode) sheet.getRange(targetRow, colMap.barcode + 1).setValue(barcode);
+      sheet.getRange(targetRow, colMap.tanggal + 1).setValue(timestamp);
+
+      // Legacy support: If Column K (index 10) exists and has header "Barcode", keep it updated if colMap.barcode != 10
+      if (colMap.barcode !== 10 && headers.length > 10) {
+        var h10 = String(headers[10] || "").trim().toLowerCase();
+        if (h10.indexOf("barcode") > -1 && barcode) {
+          sheet.getRange(targetRow, 11).setValue(barcode);
+        }
+      }
+      
+      return { success: true, message: "Data ban " + armadaId + " (" + posisi + ") berhasil diupdate pada baris " + targetRow };
+    } else {
+      // APPEND new row matching columns
+      var newRowLength = Math.max(7, colMap.barcode + 1);
+      var newRow = new Array(newRowLength).fill("");
+      newRow[colMap.armada] = armadaId;
+      newRow[colMap.posisi] = posisi;
+      newRow[colMap.tahun] = tahunBan;
+      newRow[colMap.code] = codeBan;
+      newRow[colMap.tanggal] = timestamp;
+      newRow[colMap.seri] = noSeri;
+      newRow[colMap.barcode] = barcode;
+
+      sheet.appendRow(newRow);
+      return { success: true, message: "Data ban baru (" + armadaId + " - " + posisi + ") berhasil ditambahkan." };
+    }
+  } catch(e) {
+    return { success: false, message: "Error updateBan: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
 }
+
+function updateFotoArmada(contents, ss, sheetMap) {
+  var armadaId = String(contents.armadaId || "").trim().toUpperCase();
+  var base64Photo = contents.base64Photo || contents.fotoBase64 || "";
+  var photoMimeType = contents.photoMimeType || "image/jpeg";
+  var fotoProfileCol = 12; // Kolom L pada sheet Armada.
+
+  if (!armadaId) return { success: false, message: "Armada ID wajib diisi." };
+  if (!base64Photo) return { success: false, message: "Tidak ada data foto yang dikirim." };
+
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+
+  try {
+    var sheet = getSheetByGid(sheetMap, GID_ARMADA) ||
+                getSheetByGid(ss, GID_ARMADA) ||
+                getSheetByNameFromMap(ss, sheetMap, "ARMADA") ||
+                getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (!sheet) return { success: false, message: "Sheet 'Armada' tidak ditemukan." };
+
+    if (sheet.getMaxColumns() < fotoProfileCol) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), fotoProfileCol - sheet.getMaxColumns());
+    }
+    var headerCell = sheet.getRange(1, fotoProfileCol).getValue();
+    if (!headerCell || String(headerCell).trim() === "") {
+      sheet.getRange(1, fotoProfileCol).setValue("FOTO PROFIL ARMADA");
+    }
+
+    var linkFoto = saveImageToDrive(
+      base64Photo,
+      "PROFILE_ARMADA_" + armadaId + ".jpg",
+      "foto profil armada",
+      photoMimeType
+    );
+    if (!linkFoto) return { success: false, message: "Foto gagal disimpan ke Google Drive." };
+
+    var data = sheet.getDataRange().getValues();
+    var updatedCount = 0;
+    for (var i = 1; i < data.length; i++) {
+      var cellVal = data[i][0] ? String(data[i][0]).trim().toUpperCase() : "";
+      if (cellVal === armadaId) {
+        sheet.getRange(i + 1, fotoProfileCol).setValue(linkFoto);
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount === 0) {
+      return { success: false, message: "Armada ID " + armadaId + " tidak ditemukan pada sheet Armada." };
+    }
+
+    return {
+      success: true,
+      linkFoto: linkFoto,
+      message: "Foto profil armada " + armadaId + " berhasil disimpan pada kolom FOTO PROFIL ARMADA."
+    };
+  } catch(err) {
+    return { success: false, message: "Gagal update foto profil: " + err.toString() };
+  }
+}
+
+function updateFotoServiceArmada(contents, ss, sheetMap) {
+  var armadaId = String(contents.armadaId || "").trim().toUpperCase();
+  var base64Photo = contents.base64Photo || contents.fotoBase64 || "";
+  var photoMimeType = contents.photoMimeType || "image/jpeg";
+  var fotoServiceCol = 13; // Kolom M (1-based index 13) pada sheet Armada.
+
+  if (!armadaId) return { success: false, message: "Armada ID wajib diisi." };
+  if (!base64Photo) return { success: false, message: "Tidak ada data foto yang dikirim." };
+
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+
+  try {
+    var sheet = getSheetByGid(sheetMap, GID_ARMADA) ||
+                getSheetByGid(ss, GID_ARMADA) ||
+                getSheetByNameFromMap(ss, sheetMap, "ARMADA") ||
+                getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (!sheet) return { success: false, message: "Sheet 'Armada' tidak ditemukan." };
+
+    var data = sheet.getDataRange().getValues();
+    var targetRowIndex = -1;
+    for (var i = 1; i < data.length; i++) {
+      var cellVal = data[i][0] ? String(data[i][0]).trim().toUpperCase() : "";
+      if (cellVal === armadaId) {
+        targetRowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (targetRowIndex === -1) {
+      return { success: false, message: "Armada ID " + armadaId + " tidak ditemukan pada sheet Armada." };
+    }
+
+    if (sheet.getMaxColumns() < fotoServiceCol) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), fotoServiceCol - sheet.getMaxColumns());
+    }
+    var headerCell = sheet.getRange(1, fotoServiceCol).getValue();
+    if (!headerCell || String(headerCell).trim() === "" || String(headerCell).toUpperCase().indexOf("FOTO GANTUNGAN") === -1) {
+      sheet.getRange(1, fotoServiceCol).setValue("FOTO GANTUNGAN SERVICE");
+    }
+
+    var linkFoto = saveImageToDrive(
+      base64Photo,
+      "SERVICE_TAG_" + armadaId + "_" + new Date().getTime() + ".jpg",
+      "FOTO_GANTUNGAN_SERVICE",
+      photoMimeType
+    );
+    if (!linkFoto) return { success: false, message: "Foto gagal disimpan ke Google Drive." };
+
+    sheet.getRange(targetRowIndex, fotoServiceCol).setValue(linkFoto);
+
+    return {
+      success: true,
+      linkFoto: linkFoto,
+      message: "Foto gantungan service armada " + armadaId + " berhasil disimpan pada kolom FOTO GANTUNGAN SERVICE."
+    };
+  } catch(err) {
+    return { success: false, message: "Gagal update foto gantungan service: " + err.toString() };
+  }
+}
+
+function submitTerkirim(contents, ss, sheetMap) {
+  var p = contents.request || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    var targetGid = p.sheetId || contents.sheetId || GID_SURAT_JALAN;
+    var logSheet = getSheetByGid(sheetMap, targetGid) 
+                || getSheetByGid(sheetMap, GID_SURAT_JALAN)
+                || getSheetByNameFromMap(ss, sheetMap, "ARSIP PENGIRIMAN") 
+                || getSheetByNameFromMap(ss, sheetMap, "PENCATATAN SURAT JALAN") 
+                || getSheetByNameFromMap(ss, sheetMap, "REKAP BUKTI PENGIRIMAN");
+
+    if (!logSheet) {
+      logSheet = ss.insertSheet("ARSIP PENGIRIMAN");
+      logSheet.appendRow(["Tanggal & Waktu", "Driver", "No Dokumen", "No Surat Jalan", "Penerima / Alamat", "Catatan Driver", "Foto 1 (Depan)", "Foto 2 (Belakang)", "Foto 3 (Kiri)", "Foto 4 (Kanan)", "Foto 5 / Video", "Status"]);
+    }
+    
+    var docNo = p.noDokumen || p.noSuratJalan || ("ORDER_" + Date.now());
+    var folderName = "Bukti_Pengiriman_" + docNo;
+    var subFolder = getOrCreateSubFolderById(FOLDER_ID_PENGIRIMAN, folderName);
+    
+    var fileLinks = [];
+    if (p.files && p.files.length > 0) {
+      for (var i = 0; i < p.files.length; i++) {
+        var f = p.files[i];
+        if (f.base64) {
+          var url = saveImageToSubFolder(f.base64, f.fileName || ("bukti_" + (i+1) + ".jpg"), subFolder, f.mimeType || "image/jpeg");
+          if (url) fileLinks.push(url);
+        } else if (f.url || f.link) {
+          fileLinks.push(f.url || f.link);
+        }
+      }
+    }
+
+    var nowFormatted = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+    var driverId = p.driver || p.driverId || p.username || "Driver";
+    var noDoc = p.noDokumen || p.noSuratJalan || "";
+    var noSj = p.noSuratJalan || p.noDokumen || "";
+    var penerima = p.penerima || p.alamat || "";
+    var catatan = p.catatan || "";
+
+    var lastCol = logSheet.getLastColumn();
+    var lastRow = logSheet.getLastRow();
+
+    if (lastRow >= 1 && lastCol > 0) {
+      var headerRow = logSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      var rowData = new Array(lastCol).fill("");
+      var fileLinkIndex = 0;
+      var hasHeaderMatch = false;
+
+      for (var c = 0; c < lastCol; c++) {
+        var h = String(headerRow[c] || "").toLowerCase().trim();
+        if (h.indexOf("tgl") > -1 || h.indexOf("tanggal") > -1 || h.indexOf("waktu") > -1 || h.indexOf("time") > -1) {
+          rowData[c] = nowFormatted; hasHeaderMatch = true;
+        } else if (h.indexOf("driver") > -1 || h.indexOf("sopir") > -1) {
+          rowData[c] = driverId; hasHeaderMatch = true;
+        } else if (h.indexOf("doc") > -1 || h.indexOf("dokumen") > -1 || h.indexOf("order") > -1) {
+          rowData[c] = noDoc; hasHeaderMatch = true;
+        } else if (h.indexOf("surat jalan") > -1 || h.indexOf("sj") > -1 || h.indexOf("receive") > -1) {
+          rowData[c] = noSj; hasHeaderMatch = true;
+        } else if (h.indexOf("penerima") > -1 || h.indexOf("alamat") > -1 || h.indexOf("customer") > -1 || h.indexOf("toko") > -1) {
+          rowData[c] = penerima; hasHeaderMatch = true;
+        } else if (h.indexOf("catatan") > -1 || h.indexOf("keterangan") > -1 || h.indexOf("alasan") > -1 || h.indexOf("remark") > -1) {
+          rowData[c] = catatan; hasHeaderMatch = true;
+        } else if (h.indexOf("foto") > -1 || h.indexOf("bukti") > -1 || h.indexOf("image") > -1 || h.indexOf("file") > -1 || h.indexOf("link") > -1 || h.indexOf("video") > -1) {
+          if (fileLinkIndex < fileLinks.length) {
+            rowData[c] = fileLinks[fileLinkIndex++];
+          } else if (fileLinks.length > 0 && fileLinkIndex === 0) {
+            rowData[c] = fileLinks.join("\n");
+          }
+          hasHeaderMatch = true;
+        } else if (h.indexOf("status") > -1) {
+          rowData[c] = "TERKIRIM"; hasHeaderMatch = true;
+        }
+      }
+
+      if (hasHeaderMatch) {
+        logSheet.appendRow(rowData);
+      } else {
+        logSheet.appendRow([
+          nowFormatted, driverId, noDoc, noSj, penerima, catatan,
+          fileLinks[0] || "", fileLinks[1] || "", fileLinks[2] || "", fileLinks[3] || "", fileLinks[4] || "",
+          "TERKIRIM"
+        ]);
+      }
+    } else {
+      logSheet.appendRow([
+        nowFormatted, driverId, noDoc, noSj, penerima, catatan,
+        fileLinks[0] || "", fileLinks[1] || "", fileLinks[2] || "", fileLinks[3] || "", fileLinks[4] || "",
+        "TERKIRIM"
+      ]);
+    }
+
+    try {
+      var allSheets = sheetMap.sheets || ss.getSheets();
+      var targetKeyDoc = noDoc.toLowerCase().trim();
+      var targetKeySj = noSj.toLowerCase().trim();
+
+      if (targetKeyDoc || targetKeySj) {
+        for (var s = 0; s < allSheets.length; s++) {
+          var curSheet = allSheets[s];
+          var sName = curSheet.getName().toUpperCase();
+          if (sName.indexOf("LOG") > -1 || sName.indexOf("ARSIP") > -1 || sName.indexOf("DRIVER") > -1 || sName.indexOf("ARMADA") > -1) continue;
+
+          var sData = curSheet.getDataRange().getValues();
+          for (var r = 0; r < sData.length; r++) {
+            var rowStr = sData[r].join(" ").toLowerCase();
+            if ((targetKeyDoc && rowStr.indexOf(targetKeyDoc) > -1) || (targetKeySj && rowStr.indexOf(targetKeySj) > -1)) {
+              var rowChanged = false;
+              for (var c = 0; c < sData[r].length; c++) {
+                var cellVal = String(sData[r][c] || "").trim().toUpperCase();
+                if (cellVal === "BELUM TERKIRIM" || cellVal === "PROSES" || cellVal === "PENDING" || cellVal === "DALAM PERJALANAN") {
+                  sData[r][c] = "TERKIRIM";
+                  rowChanged = true;
+                }
+              }
+              if (rowChanged) {
+                batchWriteRow(curSheet, r + 1, 1, sData[r]);
+              }
+            }
+          }
+        }
+      }
+    } catch(errUpdate) {
+      Logger.log("Update status di sheet utama error: " + errUpdate.toString());
+    }
+
+    return { success: true, message: "Bukti terkirim & foto berhasil disimpan ke Google Spreadsheet GID " + logSheet.getSheetId() + "!" };
+  } catch(e) {
+    return { success: false, message: "Gagal menyimpan bukti terkirim: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================
+// UTILITIES & HELPERS (getSpreadsheet, getOrCreateFolder, saveImageToDrive, sendAdminEmail, getKirPajakMap, getTerkirimSet, parseSheetData)
+// ============================================
+
+function getSpreadsheet(e, postData) {
+  var id = "";
+  if (e && e.parameter && e.parameter.spreadsheetId) id = e.parameter.spreadsheetId;
+  if (!id && postData && postData.spreadsheetId) id = postData.spreadsheetId;
+  if (!id) {
+    try {
+      id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+    } catch (err) {}
+  }
+  if (!id) id = DEFAULT_SPREADSHEET_ID;
+
+  if (id) {
+    try {
+      var opened = SpreadsheetApp.openById(id);
+      if (opened) return opened;
+    } catch (err) {
+      Logger.log("openById failed for ID [" + id + "]: " + err.toString());
+    }
+  }
+  try {
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) return active;
+  } catch (err) {}
+
+  throw new Error("Gagal membuka Spreadsheet dengan ID: " + id);
+}
+
+function getSheetByGid(ssOrMap, gid) {
+  if (!gid) return null;
+  var gidStr = String(gid);
+  
+  if (ssOrMap) {
+    if (ssOrMap.byGid && ssOrMap.byGid[gidStr]) {
+      return ssOrMap.byGid[gidStr];
+    }
+    if (ssOrMap[gidStr] && typeof ssOrMap[gidStr].getName === "function") {
+      return ssOrMap[gidStr];
+    }
+    if (typeof ssOrMap.getSheets === "function") {
+      try {
+        var sheets = ssOrMap.getSheets();
+        for (var i = 0; i < sheets.length; i++) {
+          if (String(sheets[i].getSheetId()) === gidStr) return sheets[i];
+        }
+      } catch(e) {}
+    }
+  }
+  return null;
+}
+
+function getOrCreateFolder(folderName) {
+  var parentId = FOLDER_ID_PENGIRIMAN;
+  var fn = (folderName || "").trim().toLowerCase();
+  
+  if (fn.indexOf("gantungan") !== -1 || fn.indexOf("service") !== -1 || fn.indexOf("profil") !== -1 || fn.indexOf("armada") !== -1) {
+    parentId = FOLDER_ID_PROFIL_ARMADA;
+  } else if (fn.indexOf("km") !== -1 || fn.indexOf("odometer") !== -1) {
+    parentId = FOLDER_ID_KM;
+  } else if (fn.indexOf("pengajuan") !== -1) {
+    parentId = FOLDER_ID_PENGAJUAN;
+  } else if (fn.indexOf("pengiriman") !== -1 || fn.indexOf("bukti") !== -1 || fn.indexOf("surat") !== -1) {
+    parentId = FOLDER_ID_PENGIRIMAN;
+  }
+  
+  var parentFolder = null;
+  try {
+    parentFolder = DriveApp.getFolderById(parentId);
+  } catch(errParent) {
+    try {
+      parentFolder = DriveApp.getFolderById(FOLDER_ID_PENGIRIMAN);
+    } catch(e2) {
+      try { parentFolder = DriveApp.getRootFolder(); } catch(eRoot) {}
+    }
+  }
+
+  if (!folderName || !parentFolder) {
+    return parentFolder;
+  }
+
+  // Jika folderName merujuk langsung ke nama kategori utama, gunakan parentFolder
+  if (fn === "02_foto_profil_armada" || fn === "foto profil armada" || fn === "foto profil" ||
+      fn === "03_foto_odometer_km" || fn === "foto odometer" || fn === "foto km" || fn === "odometer" ||
+      fn === "04_pengajuan" || fn === "pengajuan" ||
+      fn === "05_bukti_pengiriman" || fn === "bukti pengiriman") {
+    return parentFolder;
+  }
+
+  var targetSubFolderName = folderName;
+  if (fn.indexOf("gantungan") !== -1 || fn.indexOf("service") !== -1) {
+    targetSubFolderName = "FOTO_GANTUNGAN_SERVICE";
+  }
+
+  try {
+    var subFolders = parentFolder.getFoldersByName(targetSubFolderName);
+    if (subFolders.hasNext()) {
+      return subFolders.next();
+    } else {
+      return parentFolder.createFolder(targetSubFolderName);
+    }
+  } catch(e) {
+    Logger.log("getOrCreateFolder subfolder error: " + e.toString());
+    return parentFolder;
+  }
+}
+
+function saveImageToDrive(base64Str, filename, folderName, mimeType) {
+  try {
+    if (!base64Str) return "";
+    var cleanB64 = String(base64Str).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
+    var folder = getOrCreateFolder(folderName);
+
+    var blob = Utilities.newBlob(Utilities.base64Decode(cleanB64), mimeType || "image/jpeg", filename || "bukti.jpg");
+    var file = folder ? folder.createFile(blob) : DriveApp.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch(errShare) {}
+    return file.getUrl();
+  } catch(e) {
+    Logger.log("saveImageToDrive error: " + e.toString());
+    return "";
+  }
+}
+
+function saveNotaBbmToDrive(base64Str, armadaId, customFileName, mimeType) {
+  try {
+    if (!base64Str || typeof base64Str !== "string") return "";
+    var cleanB64 = String(base64Str).replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    if (!cleanB64) return "";
+
+    var decodedBytes = Utilities.base64Decode(cleanB64);
+    if (decodedBytes.length > 8 * 1024 * 1024) {
+      throw new Error("Ukuran berkas nota BBM melebihi batas maksimum 8 MB");
+    }
+
+    var normalizedMime = (mimeType || "").toLowerCase().trim();
+    var ext = "jpg";
+    if (normalizedMime === "application/pdf" || (customFileName && customFileName.toLowerCase().endsWith(".pdf"))) {
+      normalizedMime = "application/pdf";
+      ext = "pdf";
+    } else if (normalizedMime === "image/png" || (customFileName && customFileName.toLowerCase().endsWith(".png"))) {
+      normalizedMime = "image/png";
+      ext = "png";
+    } else if (normalizedMime === "image/webp" || (customFileName && customFileName.toLowerCase().endsWith(".webp"))) {
+      normalizedMime = "image/webp";
+      ext = "webp";
+    } else if (normalizedMime === "image/jpeg" || normalizedMime === "image/jpg" || (customFileName && (customFileName.toLowerCase().endsWith(".jpg") || customFileName.toLowerCase().endsWith(".jpeg")))) {
+      normalizedMime = "image/jpeg";
+      ext = "jpg";
+    } else {
+      throw new Error("Format file nota BBM tidak didukung (" + mimeType + "). Hanya JPG, PNG, atau PDF.");
+    }
+
+    var timeStampStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd_HHmmss");
+    var safeArmada = String(armadaId || "UNIT").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+    var safeFileName = "NOTA_BBM_" + safeArmada + "_" + timeStampStr + "." + ext;
+
+    var targetFolder = null;
+    try {
+      targetFolder = DriveApp.getFolderById(FOLDER_ID_NOTA_BBM);
+    } catch(errFolder) {
+      Logger.log("DriveApp.getFolderById FOLDER_ID_NOTA_BBM error: " + errFolder.toString());
+    }
+
+    var blob = Utilities.newBlob(decodedBytes, normalizedMime, safeFileName);
+    var file = targetFolder ? targetFolder.createFile(blob) : DriveApp.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch(errShare) {}
+    return file.getUrl();
+  } catch(e) {
+    Logger.log("saveNotaBbmToDrive error: " + e.toString());
+    throw e;
+  }
+}
+
+function sendAdminEmail(armadaId, sisaKm, driverName, kmTerdeteksi, fotoLink) {
+  var adminEmail = getAdminEmail();
+  var subject = "⚠️ PENGINGAT SERVIS: Sisa KM Armada " + armadaId + " Kritis!";
+  var htmlBody = "<div style='font-family: Arial; padding: 20px; border: 1px solid #ddd; border-radius: 8px;'>" +
+                 "<h2>⚠️ PENGINGAT SERVIS ARMADA</h2>" +
+                 "<p>Halo Admin,</p>" +
+                 "<p>Armada <strong>" + armadaId + "</strong> telah mendekati/melewati batas kilometer servis.</p>" +
+                 "<ul>" +
+                 "<li><strong>ID Armada:</strong> " + armadaId + "</li>" +
+                 "<li><strong>KM Terdeteksi:</strong> " + kmTerdeteksi + " KM</li>" +
+                 "<li><strong>Sisa Jarak KM:</strong> <span style='color:red;font-weight:bold;'>" + sisaKm + " KM</span></li>" +
+                 "<li><strong>Driver:</strong> " + driverName + "</li>" +
+                 "</ul>";
+  if (fotoLink) {
+    htmlBody += "<p><a href='" + fotoLink + "' target='_blank'>Lihat Foto Odometer</a></p>";
+  }
+  htmlBody += "</div>";
+
+  try {
+    GmailApp.sendEmail(adminEmail, subject, "", { htmlBody: htmlBody });
+  } catch(err) {
+    Logger.log("Failed send admin email: " + err.toString());
+  }
+}
+
+function formatDateVal(val) {
+  if (!val) return "";
+  if (val instanceof Date) return Utilities.formatDate(val, "GMT+7", "dd/MM/yyyy HH:mm");
+  var s = String(val).trim();
+  if (s.indexOf("GMT") > -1) {
+    try {
+      var d = new Date(s);
+      if (!isNaN(d.getTime())) return Utilities.formatDate(d, "GMT+7", "dd/MM/yyyy HH:mm");
+    } catch(e) {}
+  }
+  return s;
+}
+
+function getTerkirimSet(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var terkirimMap = {};
+  try {
+    var logSheet = getSheetByNameFromMap(ss, sheetMap, "ARSIP PENGIRIMAN") || 
+                   getSheetByNameFromMap(ss, sheetMap, "PENCATATAN SURAT JALAN") || 
+                   getSheetByNameFromMap(ss, sheetMap, "REKAP BUKTI PENGIRIMAN") || 
+                   getSheetByGid(sheetMap, GID_SURAT_JALAN);
+    if (logSheet) {
+      var lRows = logSheet.getDataRange().getValues();
+      for (var j = 1; j < lRows.length; j++) {
+        var rNoDoc = String(lRows[j][2] || lRows[j][1] || "").trim().toLowerCase();
+        var rSj = String(lRows[j][3] || lRows[j][2] || "").trim().toLowerCase();
+        if (rNoDoc) terkirimMap[rNoDoc] = true;
+        if (rSj) terkirimMap[rSj] = true;
+      }
+    }
+  } catch(e) {}
+  return terkirimMap;
+}
+
+function parseSheetData(ss, sheet, tanggalTag, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheet) return [];
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) return [];
+  var list = [];
+  var terkirimSet = getTerkirimSet(ss, sheetMap);
+
+  var colOrder = 0, colReceive = 1, colAddress = 2, colReason = 3, colShipTo = 4, colTelp = 5, colCbm = 6, colArmada = 7, colDriver = 8, colKenek = 9, colStatus = -1;
+
+  var maxHeaderMatches = 0;
+  for (var hIdx = 0; hIdx < Math.min(25, rows.length); hIdx++) {
+    var hRow = rows[hIdx];
+    if (!hRow) continue;
+    var matches = 0;
+    var tOrder = colOrder, tReceive = colReceive, tAddress = colAddress, tReason = colReason;
+    var tShipTo = colShipTo, tTelp = colTelp, tCbm = colCbm, tArmada = colArmada, tDriver = colDriver, tKenek = colKenek, tStatus = colStatus;
+
+    for (var c = 0; c < hRow.length; c++) {
+      var cellVal = String(hRow[c] || "").trim().toLowerCase();
+      if (!cellVal) continue;
+
+      if (cellVal.indexOf("order") > -1 || cellVal.indexOf("no doc") > -1 || cellVal.indexOf("dokumen") > -1) { tOrder = c; matches++; }
+      else if (cellVal.indexOf("receive") > -1 || cellVal.indexOf("surat jalan") > -1 || cellVal.indexOf("sj") > -1) { tReceive = c; matches++; }
+      else if (cellVal.indexOf("alamat") > -1 || cellVal.indexOf("address") > -1 || cellVal.indexOf("tujuan") > -1) { tAddress = c; matches++; }
+      else if (cellVal.indexOf("alasan") > -1 || cellVal.indexOf("catatan") > -1 || cellVal.indexOf("keterangan") > -1 || cellVal.indexOf("reason") > -1 || cellVal.indexOf("remark") > -1) { tReason = c; matches++; }
+      else if (cellVal.indexOf("ship to") > -1 || cellVal.indexOf("penerima") > -1 || cellVal.indexOf("customer") > -1 || cellVal.indexOf("toko") > -1) { tShipTo = c; matches++; }
+      else if (cellVal.indexOf("telp") > -1 || cellVal.indexOf("hp") > -1 || cellVal.indexOf("phone") > -1) { tTelp = c; matches++; }
+      else if (cellVal.indexOf("cbm") > -1 || cellVal.indexOf("vol") > -1) { tCbm = c; matches++; }
+      else if (cellVal.indexOf("armada") > -1 || cellVal.indexOf("nopol") > -1 || cellVal.indexOf("unit") > -1) { tArmada = c; matches++; }
+      else if (cellVal.indexOf("driver") > -1 || cellVal.indexOf("sopir") > -1) { tDriver = c; matches++; }
+      else if (cellVal.indexOf("kenek") > -1 || cellVal.indexOf("helper") > -1) { tKenek = c; matches++; }
+      else if (cellVal.indexOf("status") > -1) { tStatus = c; matches++; }
+    }
+
+    if (matches > maxHeaderMatches) {
+      maxHeaderMatches = matches;
+      colOrder = tOrder;
+      colReceive = tReceive;
+      colAddress = tAddress;
+      colReason = tReason;
+      colShipTo = tShipTo;
+      colTelp = tTelp;
+      colCbm = tCbm;
+      colArmada = tArmada;
+      colDriver = tDriver;
+      colKenek = tKenek;
+      colStatus = tStatus;
+    }
+  }
+
+  var currentArmada = "";
+  var currentJalur = "";
+  var currentDriver = "";
+  var currentKenek = "";
+
+  var commonCities = [
+    "MADIUN", "JOMBANG", "NGANJUK", "KEDIRI", "BLITAR", "TRENGGALEK", "TULUNGAGUNG",
+    "MALANG", "SURABAYA", "PONOROGO", "MAGETAN", "NGAWI", "PACITAN", "TUBAN",
+    "LAMONGAN", "BOJONEGORO", "GRESIK", "MOJOKERTO", "PASURUAN", "PROBOLINGGO",
+    "SIDOARJO", "GUDANG", "BANYUWANGI", "JEMBER", "LUMAJANG"
+  ];
+
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r) continue;
+
+    var combinedRowStr = r.join(" ").toUpperCase().trim();
+    if (!combinedRowStr) continue;
+
+    var col0 = (colOrder >= 0 && colOrder < r.length) ? String(r[colOrder] || "").trim() : "";
+    var col1 = (colReceive >= 0 && colReceive < r.length) ? String(r[colReceive] || "").trim() : "";
+    var c0Upper = col0.toUpperCase();
+    var c1Upper = col1.toUpperCase();
+
+    if (c0Upper.indexOf("NO ORDER") !== -1 || c0Upper.indexOf("NO DOC") !== -1 || c0Upper === "NO" ||
+        c1Upper.indexOf("NO RECEIVE") !== -1 || c1Upper.indexOf("NO SURAT JALAN") !== -1 ||
+        c0Upper === "ADDRESS" || c1Upper === "ADDRESS" || combinedRowStr.indexOf("NO ORDER NO RECEIVE") !== -1 ||
+        (combinedRowStr.indexOf("NO ORDER") !== -1 && combinedRowStr.indexOf("NO RECEIVE") !== -1) ||
+        combinedRowStr.indexOf("GRAND TOTAL") !== -1 || combinedRowStr.indexOf("TOTAL ORDER") !== -1) {
+      continue;
+    }
+
+    var hasDocNumber = isDataRow(col0, col1, r);
+
+    if (!hasDocNumber) {
+      var hkMatch = combinedRowStr.match(/HK\s*\d+/i) || combinedRowStr.match(/\b[A-Z]{1,2}\s*\d{3,4}\s*[A-Z]{1,3}\b/i);
+      if (hkMatch) {
+        currentArmada = hkMatch[0].replace(/\s+/g, "").toUpperCase();
+      }
+
+      if (combinedRowStr.indexOf("DRIVER") > -1) {
+        var drvParts = combinedRowStr.split("DRIVER");
+        if (drvParts.length > 1) {
+          var drvText = drvParts[1].replace(/[:=]/g, "").trim().split(/\s{2,}|HK|\+|\-/)[0];
+          if (drvText) currentDriver = drvText;
+        }
+      }
+
+      if (combinedRowStr.indexOf("KENEK") > -1 || combinedRowStr.indexOf("HELPER") > -1) {
+        var knkParts = combinedRowStr.split(/KENEK|HELPER/);
+        if (knkParts.length > 1) {
+          var knkText = knkParts[1].replace(/[:=]/g, "").trim().split(/\s{2,}|HK|\+|\-/)[0];
+          if (knkText) currentKenek = knkText;
+        }
+      }
+
+      var foundCities = [];
+      for (var cIdx = 0; cIdx < commonCities.length; cIdx++) {
+        if (combinedRowStr.indexOf(commonCities[cIdx]) > -1) {
+          foundCities.push(commonCities[cIdx]);
+        }
+      }
+
+      if (foundCities.length > 0) {
+        currentJalur = foundCities.join(" + ");
+      } else {
+        var cleanBanner = combinedRowStr
+          .replace(/HK\s*\d+/gi, "")
+          .replace(/DRIVER\s*:?\s*[A-Z\s]+/gi, "")
+          .replace(/KENEK\s*:?\s*[A-Z\s]+/gi, "")
+          .trim();
+        if (cleanBanner.length > 2 && cleanBanner !== "NO RECEIVE" && cleanBanner !== "ADDRESS" && cleanBanner !== "REASON") {
+          currentJalur = cleanBanner;
+        }
+      }
+
+      continue;
+    }
+
+    var address = (colAddress >= 0 && colAddress < r.length) ? String(r[colAddress] || "").trim() : "";
+    var reason = (colReason >= 0 && colReason < r.length) ? String(r[colReason] || "").trim() : "";
+    var shipto = (colShipTo >= 0 && colShipTo < r.length) ? String(r[colShipTo] || "").trim() : "";
+    var telp = (colTelp >= 0 && colTelp < r.length) ? String(r[colTelp] || "").trim() : "";
+    var cbmVal = (colCbm >= 0 && colCbm < r.length) ? (parseFloat(String(r[colCbm] || "0").replace(",", ".")) || 0.0) : 0.0;
+    
+    var armadaVal = (colArmada >= 0 && colArmada < r.length && String(r[colArmada]).trim()) ? String(r[colArmada]).trim() : currentArmada;
+    var driverVal = (colDriver >= 0 && colDriver < r.length && String(r[colDriver]).trim()) ? String(r[colDriver]).trim() : currentDriver;
+    var kenekVal = (colKenek >= 0 && colKenek < r.length && String(r[colKenek]).trim()) ? String(r[colKenek]).trim() : currentKenek;
+    
+    var tujuanVal = currentJalur || address;
+
+    var rowStatus = "Belum Berangkat";
+    if (colStatus >= 0 && colStatus < r.length && r[colStatus]) {
+      rowStatus = String(r[colStatus]).trim();
+    }
+
+    var docNum = col0 || col1;
+    var sjNum = col1 || col0;
+
+    if (!docNum) {
+      for (var cellIdx = 0; cellIdx < r.length; cellIdx++) {
+        var cellContent = String(r[cellIdx] || "").trim();
+        if (cellContent && cellIdx !== colAddress && cellIdx !== colShipTo && cellContent.length >= 2) {
+          docNum = cellContent;
+          sjNum = cellContent;
+          break;
+        }
+      }
+    }
+    if (!docNum) docNum = "ORD-" + (list.length + 1);
+    if (!sjNum) sjNum = docNum;
+
+    var docKey1 = docNum.toLowerCase();
+    var docKey2 = sjNum.toLowerCase();
+    if ((docKey1 && terkirimSet[docKey1]) || (docKey2 && terkirimSet[docKey2])) {
+      rowStatus = "TERKIRIM";
+    }
+
+    list.push({
+      id: list.length + 1,
+      noDokumen: docNum,
+      noSuratJalan: sjNum,
+      tanggal: tanggalTag,
+      driver: driverVal,
+      driver1: driverVal,
+      driver2: kenekVal,
+      armada: armadaVal,
+      gudangAsal: "",
+      tujuan: tujuanVal,
+      alamat: address,
+      penerima: shipto,
+      noTelpCustomer: telp,
+      jumlahKoli: 1,
+      volumeCbm: cbmVal,
+      status: rowStatus,
+      catatan: reason,
+      remarks: reason
+    });
+  }
+
+  return list;
+}
+
+function isDataRow(col0, col1, rowArray) {
+  var s0 = col0 ? String(col0).trim() : "";
+  var s1 = col1 ? String(col1).trim() : "";
+
+  function checkDoc(str) {
+    if (!str) return false;
+    var clean = str.replace(/\s+/g, "");
+    if (clean.length < 2) return false;
+    if (/^HK\s*\d{1,2}$/i.test(clean)) return false;
+    var digits = clean.replace(/\D/g, "");
+    if (digits.length >= 1) return true;
+    if (/^[A-Z0-9\-\/]{3,}$/i.test(clean)) return true;
+    return false;
+  }
+
+  if (checkDoc(s0) || checkDoc(s1)) return true;
+
+  var nonCount = 0;
+  for (var k = 0; k < Math.min(10, rowArray.length); k++) {
+    var cellText = String(rowArray[k] || "").trim();
+    if (!cellText) continue;
+    nonCount++;
+    if (checkDoc(cellText) && cellText.toUpperCase().indexOf("HEADER") === -1 && cellText.toUpperCase().indexOf("NO ") === -1 && cellText.toUpperCase().indexOf("DRIVER") === -1) {
+      return true;
+    }
+  }
+
+  if (nonCount >= 2) {
+    var combined = rowArray.join(" ").toUpperCase();
+    if (combined.indexOf("NO ORDER") === -1 && combined.indexOf("NO RECEIVE") === -1 && combined.indexOf("DRIVER:") === -1 && combined.indexOf("KENEK:") === -1) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Memindai foto odometer menggunakan Gemini API (OCR)
+ * Mengembalikan objek respon dengan properti success dan km
+ */
+function extractKmFromImage(base64Data) {
+  try {
+    if (!base64Data) {
+      return { success: false, message: "Tidak ada data foto yang diterima." };
+    }
+
+    var cleanB64 = String(base64Data).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
+    var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") 
+                 || "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ";
+
+    if (!apiKey || apiKey === "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ") {
+      return { 
+        success: false, 
+        message: "API Key Gemini belum dikonfigurasi di Script Properties SCRIPT_PROPERTIES. Silakan atur GEMINI_API_KEY." 
+      };
+    }
+
+    var models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    var lastError = "";
+
+    for (var i = 0; i < models.length; i++) {
+      var model = models[i];
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+
+      var payload = {
+        "contents": [
+          {
+            "parts": [
+              { "text": "Tolong baca angka odometer (kilometer saat ini) dari foto ini. Hanya kembalikan angkanya saja dalam format integer murni tanpa teks/tambahan/simbol apa pun (contoh: 124530). Jika angka tidak terbaca, kembalikan 'null'." },
+              {
+                "inlineData": {
+                  "mimeType": "image/jpeg",
+                  "data": cleanB64
+                }
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseMimeType": "text/plain"
+        }
+      };
+
+      var options = {
+        "method": "post",
+        "contentType": "application/json",
+        "payload": JSON.stringify(payload),
+        "muteHttpExceptions": true
+      };
+
+      try {
+        var response = UrlFetchApp.fetch(url, options);
+        var responseCode = response.getResponseCode();
+        var responseText = response.getContentText();
+
+        if (responseCode === 200) {
+          var result = JSON.parse(responseText);
+          if (result.candidates && result.candidates.length > 0) {
+            var text = result.candidates[0].content.parts[0].text.trim();
+            var digits = text.replace(/\D/g, "");
+            var km = parseInt(digits, 10);
+            if (!isNaN(km)) {
+              return { success: true, km: km };
+            }
+          }
+        } else {
+          lastError = "Response Code " + responseCode + ": " + responseText;
+        }
+      } catch (e) {
+        lastError = e.toString();
+      }
+    }
+
+    return { success: false, message: "Gagal membaca odometer: " + lastError };
+  } catch (err) {
+    return { success: false, message: "Error OCR: " + err.toString() };
+  }
+}
+
+// ============================================
+// FITUR PENGAJUAN (BAN & AKSESORIS - GID 1517362778)
+// ============================================
+
+function submitPengajuan(contents, ss, sheetMap) {
+  var p = contents.request || contents;
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    var targetGid = p.sheetId || contents.sheetId || GID_PENGAJUAN;
+    var sheet = getSheetByGid(sheetMap, targetGid) 
+             || getSheetByGid(ss, targetGid)
+             || getSheetByNameFromMap(ss, sheetMap, "PENGAJUAN")
+             || getSheetByNameFromMap(ss, sheetMap, "PENGAJUAN BARANG");
+
+    if (!sheet) {
+      sheet = ss.insertSheet("PENGAJUAN");
+    }
+
+    if (sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) {
+      sheet.appendRow([
+        "Tanggal & Waktu", "No Pengajuan", "Driver", "ID Armada", "No Polisi", 
+        "Kategori", "Detail Barang/Ban", "Catatan Driver", 
+        "Foto 1 (Tahun/Utama)", "Foto 2 (Barcode)", "Foto 3 (View 1)", "Foto 4 (View 2)", "Foto Lainnya", "Status"
+      ]);
+    }
+
+    var nowFormatted = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+    var todayStr = Utilities.formatDate(new Date(), "GMT+7", "dd-MM-yyyy");
+    var subfolderName = "PENGAJUAN_" + todayStr;
+
+    var parentFolderId = FOLDER_ID_PENGAJUAN;
+    var subFolder = getOrCreateSubFolderById(parentFolderId, subfolderName);
+
+    var fileLinks = [];
+    if (p.files && p.files.length > 0) {
+      for (var i = 0; i < p.files.length; i++) {
+        var f = p.files[i];
+        if (f.base64) {
+          var tag = f.fileTag ? ("_" + String(f.fileTag).replace(/[^a-zA-Z0-9]/g, "_")) : ("_foto_" + (i+1));
+          var fileName = (p.armadaId || "ARMADA") + tag + "_" + Date.now() + ".jpg";
+          var url = saveImageToSubFolder(f.base64, fileName, subFolder, f.mimeType || "image/jpeg");
+          if (url) fileLinks.push(url);
+        } else if (f.url || f.link) {
+          fileLinks.push(f.url || f.link);
+        }
+      }
+    }
+
+    var noPengajuan = "PGJ-" + Date.now();
+    var driver = p.driver || p.driverName || "Driver";
+    var armadaId = p.armadaId || "";
+    var noPolisi = p.noPolisi || "";
+    var kategori = p.kategori || "Aksesoris";
+    var detail = p.detail || "";
+    var catatan = p.catatan || p.keterangan || "";
+
+    var foto1 = fileLinks[0] || "";
+    var foto2 = fileLinks[1] || "";
+    var foto3 = fileLinks[2] || "";
+    var foto4 = fileLinks[3] || "";
+    var fotoLainnya = (fileLinks.length > 4) ? fileLinks.slice(4).join("\n") : "";
+
+    sheet.appendRow([
+      nowFormatted, noPengajuan, driver, armadaId, noPolisi,
+      kategori, detail, catatan,
+      foto1, foto2, foto3, foto4, fotoLainnya, "PENDING"
+    ]);
+
+    return { 
+      success: true, 
+      noPengajuan: noPengajuan, 
+      message: "Pengajuan " + kategori + " berhasil dikirim & disimpan ke Google Sheets (GID " + GID_PENGAJUAN + ")!" 
+    };
+  } catch(e) {
+    return { success: false, message: "Gagal memproses pengajuan: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getPengajuan(ss, limit, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  limit = limit || 100;
+
+  var sheet = getSheetByGid(sheetMap, GID_PENGAJUAN) 
+           || getSheetByGid(ss, GID_PENGAJUAN)
+           || getSheetByNameFromMap(ss, sheetMap, "PENGAJUAN");
+
+  var list = [];
+  if (sheet) {
+    var data = sheet.getDataRange().getDisplayValues();
+    if (data.length > 1) {
+      for (var i = 1; i < data.length; i++) {
+        var row = data[i];
+        if (row[0] || row[1] || row[3]) {
+          list.push({
+            id: i,
+            tanggal: row[0] || "",
+            noPengajuan: row[1] || "",
+            driver: row[2] || "",
+            armadaId: row[3] || "",
+            noPolisi: row[4] || "",
+            kategori: row[5] || "",
+            detail: row[6] || "",
+            catatan: row[7] || "",
+            foto1Url: row[8] || "",
+            foto2Url: row[9] || "",
+            foto3Url: row[10] || "",
+            foto4Url: row[11] || "",
+            fotoLainnyaUrls: row[12] || "",
+            status: row[13] || "PENDING"
+          });
+        }
+      }
+    }
+  }
+  return list;
+}
+
+function getOrCreateSubFolderById(parentFolderId, subfolderName) {
+  var parentFolder = null;
+  try {
+    if (parentFolderId) parentFolder = DriveApp.getFolderById(parentFolderId);
+  } catch(err) {}
+  
+  if (!parentFolder) {
+    try { parentFolder = DriveApp.getFolderById(FOLDER_ID_PENGAJUAN); } catch(e2) {}
+  }
+  if (!parentFolder) {
+    try { parentFolder = DriveApp.getRootFolder(); } catch(eRoot) {}
+  }
+
+  if (!subfolderName || !parentFolder) {
+    return parentFolder;
+  }
+
+  try {
+    var subFolders = parentFolder.getFoldersByName(subfolderName);
+    if (subFolders.hasNext()) {
+      return subFolders.next();
+    } else {
+      return parentFolder.createFolder(subfolderName);
+    }
+  } catch(e) {
+    Logger.log("getOrCreateSubFolderById error: " + e.toString());
+    return parentFolder;
+  }
+}
+
+function saveImageToSubFolder(base64Str, filename, folderObj, mimeType) {
+  try {
+    if (!base64Str) return "";
+    var cleanB64 = String(base64Str).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
+    var blob = Utilities.newBlob(Utilities.base64Decode(cleanB64), mimeType || "image/jpeg", filename || "foto.jpg");
+    var file = folderObj ? folderObj.createFile(blob) : DriveApp.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch(errShare) {}
+    return file.getUrl();
+  } catch(e) {
+    Logger.log("saveImageToSubFolder error: " + e.toString());
+    return "";
+  }
+}
+
+// ============================================
+// FITUR PENGIRIMAN & AI (getPengiriman, getAiKnowledge, handleAsistenAi)
+// ============================================
+
+function getPengiriman(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var allSheets = sheetMap.sheets || ss.getSheets();
+  var pengirimanList = [];
+
+  for (var i = 0; i < allSheets.length; i++) {
+    var sheet = allSheets[i];
+    var sName = sheet.getName().trim();
+    var sNameUpper = sName.toUpperCase();
+
+    // Ignore non-delivery system sheets
+    if (sNameUpper.indexOf("LOG") > -1 || 
+        sNameUpper.indexOf("ARMADA") > -1 || 
+        sNameUpper.indexOf("DRIVER") > -1 || 
+        sNameUpper.indexOf("BAN") > -1 || 
+        sNameUpper.indexOf("AKI") > -1 || 
+        sNameUpper.indexOf("KIR") > -1 || 
+        sNameUpper.indexOf("PENGAJUAN") > -1 || 
+        sNameUpper.indexOf("ARSIP") > -1 || 
+        sNameUpper.indexOf("REKAP") > -1 ||
+        sNameUpper.indexOf("CATATAN") > -1) {
+      continue;
+    }
+
+    var items = parseSheetData(ss, sheet, sName, sheetMap);
+    for (var j = 0; j < items.length; j++) {
+      items[j].id = pengirimanList.length + 1;
+      pengirimanList.push(items[j]);
+    }
+  }
+  return pengirimanList;
+}
+
+function getAiKnowledge(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+
+  var knowledgeList = [];
+  try {
+    var sheet = getSheetByNameFromMap(ss, sheetMap, "AI_KNOWLEDGE") || 
+                getSheetByNameFromMap(ss, sheetMap, "KNOWLEDGE") || 
+                getSheetByNameFromMap(ss, sheetMap, "FAQ");
+
+    if (sheet) {
+      var data = sheet.getDataRange().getDisplayValues();
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][0] || data[i][1]) {
+          knowledgeList.push({
+            id: String(data[i][0] || ("K" + i)),
+            kategori: String(data[i][1] || "Umum"),
+            pertanyaan: String(data[i][2] || data[i][0] || ""),
+            jawaban: String(data[i][3] || data[i][1] || "")
+          });
+        }
+      }
+    }
+  } catch (e) {}
+
+  if (knowledgeList.length === 0) {
+    knowledgeList = [
+      {
+        id: "K01",
+        kategori: "Perawatan Armada",
+        pertanyaan: "Kapan jadwal service berkala armada truk?",
+        jawaban: "Service berkala dilakukan setiap kelipatan 5.000 KM. Pastikan melakukan input KM Odometer harian melalui aplikasi agar status service terpantau."
+      },
+      {
+        id: "K02",
+        kategori: "Pengiriman Surat Jalan",
+        pertanyaan: "Bagaimana prosedur konfirmasi pengiriman terkirim?",
+        jawaban: "Driver wajib mengambil foto bukti serah terima (foto barang & surat jalan bertanda tangan) lalu mengunggahnya melalui menu Rekap Surat Jalan."
+      },
+      {
+        id: "K03",
+        kategori: "Pemeriksaan Ban & Aki",
+        pertanyaan: "Kapan aki dan ban harus dicek / diganti?",
+        jawaban: "Pemeriksaan tekanan ban dilakukan setiap hari sebelum berangkat. Penggantian aki direkomendasikan setiap 2 tahun sekali."
+      }
+    ];
+  }
+
+  return knowledgeList;
+}
+
+function handleAsistenAi(contents) {
+  try {
+    var chatMsg = String(contents.chatMessage || contents.prompt || contents.message || "").trim();
+    var b64 = contents.base64Data || contents.base64Photo || "";
+    var userApiKey = contents.apiKey || "";
+
+    if (!chatMsg && !b64) {
+      return { success: false, message: "Pesan atau foto tidak boleh kosong." };
+    }
+
+    var apiKey = userApiKey || PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") 
+                 || "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ";
+
+    var systemInstruction = "Anda adalah Asisten AI Operasional Armada HUB Kediri (INFORMA / Kawan Lama Group). " +
+      "Tugas Anda membantu Driver dan Tim Operasional terkait panduan pengiriman surat jalan, perawatan armada truk (oli, ban, aki, service), " +
+      "pencatatan odometer KM, dan prosedur K3 pengiriman. Jawab dengan singkat, sopan, profesional, dan akurat.";
+
+    var models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+    var promptText = systemInstruction + "\n\nPertanyaan User: " + (chatMsg || "Analisis foto ini terkait armada.");
+
+    for (var i = 0; i < models.length; i++) {
+      var model = models[i];
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+
+      var parts = [{ "text": promptText }];
+      if (b64) {
+        var cleanB64 = String(b64).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
+        parts.push({
+          "inlineData": {
+            "mimeType": contents.mimeType || "image/jpeg",
+            "data": cleanB64
+          }
+        });
+      }
+
+      var payload = {
+        "contents": [{ "parts": parts }],
+        "generationConfig": { "responseMimeType": "text/plain" }
+      };
+
+      var options = {
+        "method": "post",
+        "contentType": "application/json",
+        "payload": JSON.stringify(payload),
+        "muteHttpExceptions": true
+      };
+
+      try {
+        var response = UrlFetchApp.fetch(url, options);
+        if (response.getResponseCode() === 200) {
+          var resJson = JSON.parse(response.getContentText());
+          if (resJson.candidates && resJson.candidates.length > 0) {
+            var answer = resJson.candidates[0].content.parts[0].text.trim();
+            return { success: true, message: answer };
+          }
+        }
+      } catch (e) {}
+    }
+
+    return { 
+      success: true, 
+      message: "Sistem Asisten AI HUB Kediri: Silakan pastikan kilometer odometer dicatat secara rutin setiap hari, cek kondisi ban & aki sebelum berangkat, dan simpan foto bukti surat jalan saat barang terkirim." 
+    };
+  } catch (err) {
+    return { success: false, message: "Gagal memproses Asisten AI: " + err.toString() };
+  }
+}
+
+// ============================================
+// STRUCTURAL SETUP & SHEET FORMATTING (setupAllSheets)
+// ============================================
+
+/**
+ * Master Setup: Merapikan & Membangun SELURUH Sheet Aplikasi sekaligus!
+ * Versi Batch Super Cepat & Bebas Error.
+ */
+function setupAllSheets(ss) {
+  if (!ss) ss = getSpreadsheet();
+  
+  try {
+    setupSheetArmada(ss);
+    setupSheetPengiriman(ss);
+    setupSheetLogKM(ss);
+    setupSheetDriver(ss);
+    setupSheetBan(ss);
+    setupSheetAki(ss);
+    setupSheetSparepart(ss);
+    
+    try {
+      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart) telah berhasil dirapikan secara instan!");
+    } catch(uiErr) {
+      Logger.log("Setup All Sheets Completed!");
+    }
+    
+    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart) telah berhasil dirapikan secara instan!" };
+  } catch(e) {
+    return { success: false, message: "Gagal memproses setupAllSheets: " + e.toString() };
+  }
+}
+
+// -------------------------------------------------------------
+// 1. SHEET ARMADA
+// -------------------------------------------------------------
+function setupSheetArmada(ss) {
+  var sheet = ss.getSheetByName("Armada") || ss.insertSheet("Armada");
+  var headers = [["Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "KM Service Berikutnya", "Sisa KM", "Status", "Flag", "Foto KM", "Catatan", "FOTO PROFIL ARMADA", "FOTO GANTUNGAN SERVICE"]];
+  
+  applyHeaderStyle(sheet, headers, "#0A2540");
+  
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+
+  sheet.getRange(2, 3, numRows, 5).setNumberFormat("#,##0");
+  sheet.getRange(2, 12, numRows, 3).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 1, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 8, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 12, numRows, 3).setHorizontalAlignment("center");
+
+  // Batch Formula (Diisi Sekaligus Tanpa Loop Lambat)
+  var formulas = [];
+  for (var r = 2; r <= maxRows; r++) {
+    formulas.push([
+      '=IF(D' + r + '="","", D' + r + ' + E' + r + ')',
+      '=IF(F' + r + '="","", F' + r + ' - C' + r + ')',
+      '=IF(G' + r + '="","",' +
+        'IF(G' + r + '<=0, "SERVIS SEKARANG",' +
+        'IF(G' + r + '<=1000, "⚠️ SERVICE <1000 KM", "AMAN")))'
+    ]);
+  }
+  sheet.getRange(2, 6, numRows, 3).setFormulas(formulas);
+
+  // Conditional Formatting
+  var statusRange = sheet.getRange(2, 8, numRows, 1);
+  var ruleRed = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("SERVIS SEKARANG").setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true).setRanges([statusRange]).build();
+  var ruleYellow = SpreadsheetApp.newConditionalFormatRule().whenTextContains("⚠️ SERVICE <1000 KM").setBackground("#FEF3C7").setFontColor("#92400E").setBold(true).setRanges([statusRange]).build();
+  var ruleGreen = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("AMAN").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleRed, ruleYellow, ruleGreen]);
+  
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 2. SHEET PENGIRIMAN
+// -------------------------------------------------------------
+function setupSheetPengiriman(ss) {
+  var sheet = ss.getSheetByName("Pengiriman") || ss.getSheetByName("SuratJalan") || ss.insertSheet("Pengiriman");
+  var headers = [["No Dokumen", "No Surat Jalan", "Tanggal", "Driver", "Armada", "Gudang Asal", "Tujuan", "Alamat", "Penerima", "No Telp Customer", "Jumlah Koli", "Volume CBM", "Status", "Catatan"]];
+  
+  applyHeaderStyle(sheet, headers, "#1E3A8A");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 3, numRows, 1).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 11, numRows, 1).setNumberFormat("#,##0");
+  sheet.getRange(2, 12, numRows, 1).setNumberFormat("0.00");
+  sheet.getRange(2, 1, numRows, 5).setHorizontalAlignment("center");
+  sheet.getRange(2, 13, numRows, 1).setHorizontalAlignment("center");
+
+  var statusRange = sheet.getRange(2, 13, numRows, 1);
+  var ruleTerkirim = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("TERKIRIM").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  var ruleJalan = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Dalam Perjalanan").setBackground("#E0F2FE").setFontColor("#075985").setBold(true).setRanges([statusRange]).build();
+  var rulePending = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("Belum Berangkat").setBackground("#F1F5F9").setFontColor("#475569").setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleTerkirim, ruleJalan, rulePending]);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 3. SHEET LOG KM
+// -------------------------------------------------------------
+function setupSheetLogKM(ss) {
+  var sheet = ss.getSheetByName("LogKM") || ss.insertSheet("LogKM");
+  var headers = [["Timestamp", "Armada ID", "Driver", "KM Odometer", "Foto KM", "Status", "Catatan"]];
+  
+  applyHeaderStyle(sheet, headers, "#0D9488");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 1, numRows, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+  sheet.getRange(2, 4, numRows, 1).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 3).setHorizontalAlignment("center");
+  sheet.getRange(2, 6, numRows, 1).setHorizontalAlignment("center");
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 4. SHEET DRIVER
+// -------------------------------------------------------------
+function setupSheetDriver(ss) {
+  var sheet = ss.getSheetByName("Driver") || ss.insertSheet("Driver");
+  var headers = [["Driver ID", "Nama Driver", "No HP", "Status", "Foto Profile"]];
+  
+  applyHeaderStyle(sheet, headers, "#312E81");
+  var maxRows = Math.max(sheet.getLastRow(), 30);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 1, numRows, 1).setHorizontalAlignment("center");
+  sheet.getRange(2, 3, numRows, 2).setHorizontalAlignment("center");
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 5. SHEET BAN
+// -------------------------------------------------------------
+function setupSheetBan(ss) {
+  var sheet = ss.getSheetByName("Ban") || ss.insertSheet("Ban");
+  var headers = [["Armada ID", "Position", "Brand", "Serial Number", "Tread Depth (mm)", "Status", "Last Inspection Date"]];
+  
+  applyHeaderStyle(sheet, headers, "#7C2D12");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 5, numRows, 1).setNumberFormat("0.0");
+  sheet.getRange(2, 7, numRows, 1).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 1, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 6, numRows, 2).setHorizontalAlignment("center");
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 6. SHEET AKI
+// -------------------------------------------------------------
+function setupSheetAki(ss) {
+  var sheet = ss.getSheetByName("Aki") || ss.insertSheet("Aki");
+  var headers = [["Armada ID", "No Polisi", "Brand", "Serial Number", "Tanggal Pemasangan", "Usia Aki (Hari)", "Status"]];
+  
+  applyHeaderStyle(sheet, headers, "#991B1B");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 5, numRows, 1).setNumberFormat("yyyy-mm-dd");
+  sheet.getRange(2, 6, numRows, 1).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 2).setHorizontalAlignment("center");
+  sheet.getRange(2, 5, numRows, 3).setHorizontalAlignment("center");
+
+  // Batch Formula Aki
+  var formulas = [];
+  for (var r = 2; r <= maxRows; r++) {
+    formulas.push([
+      '=IF(E' + r + '="","", INT(TODAY() - E' + r + '))',
+      '=IF(F' + r + '="","",' +
+        'IF(F' + r + '>=730, "🚨 GANTI AKI (>2 THN)",' +
+        'IF(F' + r + '>=660, "⚠️ CEK AKI (<2 BLN)", "NORMAL")))'
+    ]);
+  }
+  sheet.getRange(2, 6, numRows, 2).setFormulas(formulas);
+
+  var statusRange = sheet.getRange(2, 7, numRows, 1);
+  var ruleRed = SpreadsheetApp.newConditionalFormatRule().whenTextContains("GANTI AKI").setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true).setRanges([statusRange]).build();
+  var ruleYellow = SpreadsheetApp.newConditionalFormatRule().whenTextContains("CEK AKI").setBackground("#FEF3C7").setFontColor("#92400E").setBold(true).setRanges([statusRange]).build();
+  var ruleGreen = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("NORMAL").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleRed, ruleYellow, ruleGreen]);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// 7. SHEET SPAREPART
+// -------------------------------------------------------------
+function setupSheetSparepart(ss) {
+  var sheet = ss.getSheetByName("Sparepart") || ss.insertSheet("Sparepart");
+  var headers = [["Item ID", "Nama Item", "Kategori", "Stok", "Batas Minimum", "Unit", "Status"]];
+  
+  applyHeaderStyle(sheet, headers, "#065F46");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  
+  sheet.getRange(2, 4, numRows, 2).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 1).setHorizontalAlignment("center");
+  sheet.getRange(2, 6, numRows, 2).setHorizontalAlignment("center");
+
+  // Batch Formula Sparepart
+  var formulas = [];
+  for (var r = 2; r <= maxRows; r++) {
+    formulas.push([
+      '=IF(D' + r + '="","",' +
+        'IF(D' + r + '<=E' + r + ', "⚠️ STOK MENIPIS/HABIS", "TERSEDIA"))'
+    ]);
+  }
+  sheet.getRange(2, 7, numRows, 1).setFormulas(formulas);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+// -------------------------------------------------------------
+// UTILITY FUNCTIONS FOR SETUP
+// -------------------------------------------------------------
+function applyHeaderStyle(sheet, headers, bgColor) {
+  sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+  var headerRange = sheet.getRange(1, 1, 1, headers[0].length);
+  headerRange
+    .setBackground(bgColor)
+    .setFontColor("#FFFFFF")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 40);
+  sheet.setFrozenRows(1);
+}
+
+function applyGridAndResize(sheet, colCount, maxRows) {
+  var dataRange = sheet.getRange(1, 1, maxRows, colCount);
+  dataRange.setBorder(true, true, true, true, true, true, "#CBD5E1", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+

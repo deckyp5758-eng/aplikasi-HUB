@@ -38,7 +38,8 @@ data class LogHarianEntity(
     val kmTerdeteksi: Int,
     val linkFoto: String,
     val catatan: String,
-    val namaDriver: String
+    val namaDriver: String,
+    val notaBbmUrl: String = ""
 )
 
 @Entity(tableName = "ban_armada")
@@ -114,7 +115,8 @@ data class SubmitSuccessData(
     val armadaId: String,
     val sisaKm: Int,
     val serviceAlert: Boolean = false,
-    val linkFoto: String? = null
+    val linkFoto: String? = null,
+    val notaBbmUrl: String? = null
 )
 
 data class ChatMediaItem(

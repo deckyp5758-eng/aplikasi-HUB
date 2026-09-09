@@ -16,9 +16,15 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE log_harian ADD COLUMN notaBbmUrl TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 @Database(
     entities = [DriverEntity::class, ArmadaEntity::class, LogHarianEntity::class, BanEntity::class, PengirimanEntity::class, CatatanDriverEntity::class, PengajuanEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -41,7 +47,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "fleet_database"
                 )
-                .addMigrations(MIGRATION_10_11)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12)
                 .addCallback(DatabaseCallback(scope))
                 .fallbackToDestructiveMigration()
                 .build()

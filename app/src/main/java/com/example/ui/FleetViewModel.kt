@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
@@ -18,6 +19,16 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
+
+data class NotaBbmState(
+    val uri: Uri? = null,
+    val bitmap: Bitmap? = null,
+    val rawBytes: ByteArray? = null,
+    val fileName: String = "",
+    val mimeType: String = "image/jpeg",
+    val fileSize: Long = 0L,
+    val isPdf: Boolean = false
+)
 
 class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application, viewModelScope)
@@ -133,6 +144,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     // Submit dialog alert
     private val _submitSuccessData = MutableStateFlow<SubmitSuccessData?>(null)
     val submitSuccessData: StateFlow<SubmitSuccessData?> = _submitSuccessData.asStateFlow()
+
+    // Nota BBM State (Terpisah dari Foto Odometer)
+    private val _notaBbmState = MutableStateFlow<NotaBbmState?>(null)
+    val notaBbmState: StateFlow<NotaBbmState?> = _notaBbmState.asStateFlow()
+
+    private val _notaBbmStatus = MutableStateFlow<String?>(null)
+    val notaBbmStatus: StateFlow<String?> = _notaBbmStatus.asStateFlow()
 
     // OCR Auto-Scanner State
     private val _ocrLoading = MutableStateFlow(false)
@@ -400,6 +418,41 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setNotaBbmImage(uri: Uri?, bitmap: Bitmap, fileName: String = "nota_bbm.jpg", mimeType: String = "image/jpeg", size: Long = 0L) {
+        _notaBbmState.value = NotaBbmState(
+            uri = uri,
+            bitmap = bitmap,
+            rawBytes = null,
+            fileName = fileName,
+            mimeType = mimeType,
+            fileSize = size,
+            isPdf = false
+        )
+        _notaBbmStatus.value = "Nota BBM siap diunggah."
+    }
+
+    fun setNotaBbmPdf(uri: Uri?, bytes: ByteArray, fileName: String, size: Long) {
+        _notaBbmState.value = NotaBbmState(
+            uri = uri,
+            bitmap = null,
+            rawBytes = bytes,
+            fileName = fileName,
+            mimeType = "application/pdf",
+            fileSize = size,
+            isPdf = true
+        )
+        _notaBbmStatus.value = "Nota BBM siap diunggah."
+    }
+
+    fun clearNotaBbm() {
+        _notaBbmState.value = null
+        _notaBbmStatus.value = null
+    }
+
+    fun setNotaBbmStatus(status: String?) {
+        _notaBbmStatus.value = status
+    }
+
     private fun triggerOcr(bitmap: Bitmap) {
         viewModelScope.launch {
             _ocrLoading.value = true
@@ -458,10 +511,55 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             _submitLoading.value = true
             _submitError.value = null
 
-            // Convert bitmap to bytes with efficient WebP compression
+            // Convert bitmap to bytes with efficient WebP compression for Odometer
             var photoBytes: ByteArray? = null
             if (bitmap != null) {
                 photoBytes = ImageCompressor.compressBitmapToWebP(bitmap, maxDimension = 1280, quality = 80)
+            }
+
+            // Process Nota BBM (Optional, max 8 MB, compress only images, do not compress PDF)
+            val nota = _notaBbmState.value
+            var notaBytes: ByteArray? = null
+            var notaFileName: String? = null
+            var notaMimeType: String? = null
+
+            if (nota != null) {
+                if (nota.isPdf) {
+                    val raw = nota.rawBytes
+                    if (raw != null) {
+                        if (raw.size > 8 * 1024 * 1024) {
+                            _submitError.value = "Ukuran berkas PDF melebihi batas maksimum 8 MB."
+                            _notaBbmStatus.value = "Nota BBM gagal diunggah."
+                            _submitLoading.value = false
+                            return@launch
+                        }
+                        notaBytes = raw
+                        notaFileName = nota.fileName.ifEmpty { "NOTA_BBM_${armadaId}_${System.currentTimeMillis()}.pdf" }
+                        notaMimeType = "application/pdf"
+                    }
+                } else if (nota.bitmap != null) {
+                    // Compress only images
+                    val compressed = ImageCompressor.compressBitmapToWebP(nota.bitmap, maxDimension = 1280, quality = 80)
+                    if (compressed != null && compressed.size > 8 * 1024 * 1024) {
+                        _submitError.value = "Ukuran gambar nota melebihi batas maksimum 8 MB."
+                        _notaBbmStatus.value = "Nota BBM gagal diunggah."
+                        _submitLoading.value = false
+                        return@launch
+                    }
+                    notaBytes = compressed
+                    notaFileName = "NOTA_BBM_${armadaId}_${System.currentTimeMillis()}.webp"
+                    notaMimeType = ImageCompressor.MIME_TYPE_WEBP
+                } else if (nota.rawBytes != null) {
+                    if (nota.rawBytes.size > 8 * 1024 * 1024) {
+                        _submitError.value = "Ukuran file nota melebihi batas maksimum 8 MB."
+                        _notaBbmStatus.value = "Nota BBM gagal diunggah."
+                        _submitLoading.value = false
+                        return@launch
+                    }
+                    notaBytes = nota.rawBytes
+                    notaFileName = nota.fileName.ifEmpty { "NOTA_BBM_${armadaId}_${System.currentTimeMillis()}.jpg" }
+                    notaMimeType = nota.mimeType
+                }
             }
 
             val result = repository.submitDailyLog(
@@ -470,7 +568,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 kmTerdeteksi = kmVal,
                 photoBytes = photoBytes,
                 photoMimeType = ImageCompressor.MIME_TYPE_WEBP,
-                catatan = catatan
+                catatan = catatan,
+                notaBbmBytes = notaBytes,
+                notaBbmFileName = notaFileName,
+                notaBbmMimeType = notaMimeType
             )
 
             when (result) {
@@ -479,9 +580,16 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                         armadaId = armadaId,
                         sisaKm = result.sisaKm,
                         serviceAlert = result.serviceAlert,
-                        linkFoto = result.linkFoto
+                        linkFoto = result.linkFoto,
+                        notaBbmUrl = result.notaBbmUrl
                     )
                     
+                    if (result.notaBbmUrl.isNotEmpty()) {
+                        _notaBbmStatus.value = "Nota BBM berhasil disimpan ke Google Drive."
+                    } else {
+                        _notaBbmStatus.value = null
+                    }
+
                     // Trigger dynamic local notification
                     NotificationHelper.sendNotification(
                         getApplication(),
@@ -494,10 +602,14 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                     _kmInput.value = ""
                     _catatanInput.value = ""
                     _selectedPhoto.value = null
+                    _notaBbmState.value = null
                     // Update metadata
                     refreshMetadata()
                 }
                 is SubmitResult.Error -> {
+                    if (_notaBbmState.value != null) {
+                        _notaBbmStatus.value = "Nota BBM gagal diunggah."
+                    }
                     _submitError.value = result.message
                 }
             }
@@ -678,6 +790,19 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                         urlOrPath = photoUrl,
                         type = "IMAGE",
                         source = "Log KM/Odometer"
+                    )
+                )
+            }
+
+            if (log.notaBbmUrl.isNotBlank() && log.notaBbmUrl.startsWith("http") && 
+                (isMatch || tokens.any { it.contains("bbm") || it.contains("nota") || it.contains("struk") || it.contains("bensin") || it.contains("solar") })) {
+                results.add(
+                    ChatMediaItem(
+                        title = "⛽ Nota BBM - ${log.armadaId}",
+                        description = "Tgl: ${log.tanggal} | Driver: ${log.namaDriver} | Terdeteksi: ${log.kmTerdeteksi} km",
+                        urlOrPath = log.notaBbmUrl,
+                        type = if (log.notaBbmUrl.contains(".pdf", ignoreCase = true)) "DOCUMENT" else "IMAGE",
+                        source = "Nota BBM Log Harian"
                     )
                 )
             }

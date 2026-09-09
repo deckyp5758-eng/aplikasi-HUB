@@ -295,7 +295,8 @@ data class LogApiItem(
     val kmTerdeteksi: Int,
     val linkFoto: String,
     val catatan: String,
-    val namaDriver: String
+    val namaDriver: String,
+    val notaBbmUrl: String? = null
 )
 
 data class DriversApiResponse(
@@ -364,12 +365,16 @@ data class LogDataApiItem(
     val base64Photo: String?,
     val photoName: String?,
     val photoMimeType: String?,
-    val catatan: String?
+    val catatan: String?,
+    val notaBbmBase64: String? = null,
+    val notaBbmFileName: String? = null,
+    val notaBbmMimeType: String? = null
 )
 
 data class SubmitLogApiResponse(
     val success: Boolean,
     val linkFoto: String?,
+    val notaBbmUrl: String? = null,
     val sisaKm: Int?,
     val serviceAlert: Boolean?,
     val message: String?

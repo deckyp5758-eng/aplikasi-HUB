@@ -25,6 +25,7 @@ var FOLDER_ID_PROFIL_ARMADA = "1Byjocy7gfIxgYYs4P1lKRgHIqyPzAYPC"; // 02_FOTO_PR
 var FOLDER_ID_KM = "1VP-UhNQ0XrLiZaG283_7qqRM-p8mQkhE"; // 03_FOTO_ODOMETER_KM
 var FOLDER_ID_PENGAJUAN = "1pHiCGelOHZdC01FZXWQlUBgo9ma3V0LG"; // 04_PENGAJUAN
 var FOLDER_ID_DATABASE = "1KfUvHtEbZtU_GQH9N88s-V0LQwRQzD7P"; // 01_DATABASE_DAN_BACKEND
+var FOLDER_ID_NOTA_BBM = "1kUXk-8DoVBNtpveELmRf8FTt_Z_04EYd"; // 04_NOTA_BBM_LOG_HARIAN
 
 function getAdminEmail() {
   return PropertiesService.getScriptProperties().getProperty("ADMIN_EMAIL") || "deckyp5758@gmail.com";
@@ -454,6 +455,7 @@ function getLogs(ss, limit, sheetMap) {
       var data = sheet.getRange(startRow, 1, numRows, lastCol).getDisplayValues();
       for (var i = 0; i < data.length; i++) {
         if (data[i][0] || data[i][1]) {
+          var notaBbm = (data[i].length > 6 && data[i][6]) ? String(data[i][6]).trim() : "";
           logsList.push({
             tanggal: formatDateVal(data[i][0]),
             armadaId: String(data[i][1] || data[i][4] || ""),
@@ -461,7 +463,8 @@ function getLogs(ss, limit, sheetMap) {
             kmTerdeteksi: Number(data[i][2]) || 0,
             linkFoto: String(data[i][3] || data[i][8] || ""),
             catatan: String(data[i][4] || data[i][10] || ""),
-            namaDriver: String(data[i][5] || data[i][3] || "")
+            namaDriver: String(data[i][5] || data[i][3] || ""),
+            notaBbmUrl: notaBbm
           });
         }
       }
@@ -887,38 +890,55 @@ function submitLog(contents, ss, sheetMap) {
       photoUrl = logData.linkFoto || logData.url || logData.photoUrl || logData.fotoUrl;
     }
 
+    // 2. Nota BBM (kolom G) - field terpisah
+    var notaBbmUrl = "";
+    var b64Nota = logData.notaBbmBase64 || contents.notaBbmBase64 || "";
+    var notaFileName = logData.notaBbmFileName || contents.notaBbmFileName || "";
+    var notaMimeType = logData.notaBbmMimeType || contents.notaBbmMimeType || "";
+    if (b64Nota && typeof b64Nota === "string" && b64Nota.trim().length > 0) {
+      try {
+        notaBbmUrl = saveNotaBbmToDrive(b64Nota, armadaId, notaFileName, notaMimeType);
+      } catch(errNota) {
+        return { success: false, message: "Gagal menyimpan nota BBM: " + errNota.message };
+      }
+    } else if (logData.notaBbmUrl || contents.notaBbmUrl) {
+      notaBbmUrl = String(logData.notaBbmUrl || contents.notaBbmUrl).trim();
+    }
+
     var lastCol = logSheet.getLastColumn();
     var lastRow = logSheet.getLastRow();
 
-    if (lastRow >= 1 && lastCol > 0) {
-      var headerRow = logSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      var rowData = new Array(lastCol).fill("");
-      var hasHeaderMatch = false;
-
-      for (var c = 0; c < lastCol; c++) {
-        var h = String(headerRow[c] || "").toLowerCase().trim();
-        if (h.indexOf("tgl") > -1 || h.indexOf("tanggal") > -1 || h.indexOf("waktu") > -1 || h.indexOf("time") > -1 || h.indexOf("date") > -1) {
-          rowData[c] = dateStr; hasHeaderMatch = true;
-        } else if (h.indexOf("armada") > -1 || h.indexOf("nopol") > -1 || h.indexOf("unit") > -1) {
-          rowData[c] = armadaId; hasHeaderMatch = true;
-        } else if (h.indexOf("km") > -1 || h.indexOf("terdeteksi") > -1) {
-          rowData[c] = kmVal; hasHeaderMatch = true;
-        } else if (h.indexOf("foto") > -1 || h.indexOf("bukti") > -1 || h.indexOf("link") > -1 || h.indexOf("image") > -1 || h.indexOf("photo") > -1) {
-          rowData[c] = photoUrl; hasHeaderMatch = true;
-        } else if (h.indexOf("catatan") > -1 || h.indexOf("keterangan") > -1 || h.indexOf("remark") > -1) {
-          rowData[c] = catatan; hasHeaderMatch = true;
-        } else if (h.indexOf("driver") > -1 || h.indexOf("sopir") > -1 || h.indexOf("nama") > -1) {
-          rowData[c] = driverName; hasHeaderMatch = true;
-        }
-      }
-
-      if (hasHeaderMatch) {
-        logSheet.appendRow(rowData);
-      } else {
-        logSheet.appendRow([dateStr, armadaId, kmVal, photoUrl, catatan, driverName]);
-      }
+    if (lastRow < 1 || lastCol < 6) {
+      logSheet.getRange(1, 1, 1, 7).setValues([["Tanggal", "Id armada", "KM terdeteksi", "link foto", "Catatan", "Nama Driver", "URL NOTA BBM"]]);
+      lastCol = 7;
     } else {
-      logSheet.appendRow([dateStr, armadaId, kmVal, photoUrl, catatan, driverName]);
+      var headerVals = logSheet.getRange(1, 1, 1, Math.max(lastCol, 7)).getValues()[0];
+      var headerG = String(headerVals[6] || "").trim();
+      if (!headerG) {
+        logSheet.getRange(1, 7).setValue("URL NOTA BBM");
+        if (lastCol < 7) lastCol = 7;
+      }
+    }
+
+    // Row mapping: A=Tanggal, B=Id armada, C=KM terdeteksi, D=link foto, E=Catatan, F=Nama Driver, G=URL NOTA BBM
+    var rowToAppend = [
+      dateStr,        // A: Tanggal
+      armadaId,       // B: Id armada
+      kmVal,          // C: KM terdeteksi
+      photoUrl,       // D: link foto (Odometer)
+      catatan,        // E: Catatan
+      driverName,     // F: Nama Driver
+      notaBbmUrl      // G: URL NOTA BBM
+    ];
+
+    if (lastCol > 7) {
+      var paddedRow = new Array(lastCol).fill("");
+      for (var p = 0; p < 7; p++) {
+        paddedRow[p] = rowToAppend[p];
+      }
+      logSheet.appendRow(paddedRow);
+    } else {
+      logSheet.appendRow(rowToAppend);
     }
 
     var sisaKm = 1000;
@@ -962,6 +982,7 @@ function submitLog(contents, ss, sheetMap) {
     return {
       success: true,
       linkFoto: photoUrl,
+      notaBbmUrl: notaBbmUrl || "",
       sisaKm: sisaKm,
       serviceAlert: serviceAlert,
       message: "Log harian Odometer berhasil disimpan!"
@@ -1813,6 +1834,58 @@ function saveImageToDrive(base64Str, filename, folderName, mimeType) {
   } catch(e) {
     Logger.log("saveImageToDrive error: " + e.toString());
     return "";
+  }
+}
+
+function saveNotaBbmToDrive(base64Str, armadaId, customFileName, mimeType) {
+  try {
+    if (!base64Str || typeof base64Str !== "string") return "";
+    var cleanB64 = String(base64Str).replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    if (!cleanB64) return "";
+
+    var decodedBytes = Utilities.base64Decode(cleanB64);
+    if (decodedBytes.length > 8 * 1024 * 1024) {
+      throw new Error("Ukuran berkas nota BBM melebihi batas maksimum 8 MB");
+    }
+
+    var normalizedMime = (mimeType || "").toLowerCase().trim();
+    var ext = "jpg";
+    if (normalizedMime === "application/pdf" || (customFileName && customFileName.toLowerCase().endsWith(".pdf"))) {
+      normalizedMime = "application/pdf";
+      ext = "pdf";
+    } else if (normalizedMime === "image/png" || (customFileName && customFileName.toLowerCase().endsWith(".png"))) {
+      normalizedMime = "image/png";
+      ext = "png";
+    } else if (normalizedMime === "image/webp" || (customFileName && customFileName.toLowerCase().endsWith(".webp"))) {
+      normalizedMime = "image/webp";
+      ext = "webp";
+    } else if (normalizedMime === "image/jpeg" || normalizedMime === "image/jpg" || (customFileName && (customFileName.toLowerCase().endsWith(".jpg") || customFileName.toLowerCase().endsWith(".jpeg")))) {
+      normalizedMime = "image/jpeg";
+      ext = "jpg";
+    } else {
+      throw new Error("Format file nota BBM tidak didukung (" + mimeType + "). Hanya JPG, PNG, atau PDF.");
+    }
+
+    var timeStampStr = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd_HHmmss");
+    var safeArmada = String(armadaId || "UNIT").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+    var safeFileName = "NOTA_BBM_" + safeArmada + "_" + timeStampStr + "." + ext;
+
+    var targetFolder = null;
+    try {
+      targetFolder = DriveApp.getFolderById(FOLDER_ID_NOTA_BBM);
+    } catch(errFolder) {
+      Logger.log("DriveApp.getFolderById FOLDER_ID_NOTA_BBM error: " + errFolder.toString());
+    }
+
+    var blob = Utilities.newBlob(decodedBytes, normalizedMime, safeFileName);
+    var file = targetFolder ? targetFolder.createFile(blob) : DriveApp.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch(errShare) {}
+    return file.getUrl();
+  } catch(e) {
+    Logger.log("saveNotaBbmToDrive error: " + e.toString());
+    throw e;
   }
 }
 

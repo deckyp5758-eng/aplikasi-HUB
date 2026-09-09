@@ -450,7 +450,8 @@ class FleetRepository(
                             kmTerdeteksi = it.kmTerdeteksi,
                             linkFoto = it.linkFoto,
                             catatan = it.catatan,
-                            namaDriver = it.namaDriver
+                            namaDriver = it.namaDriver,
+                            notaBbmUrl = it.notaBbmUrl ?: ""
                         )
                     }
                     db.logHarianDao().clearLogs()
@@ -963,7 +964,10 @@ class FleetRepository(
         kmTerdeteksi: Int,
         photoBytes: ByteArray?,
         photoMimeType: String?,
-        catatan: String?
+        catatan: String?,
+        notaBbmBytes: ByteArray? = null,
+        notaBbmFileName: String? = null,
+        notaBbmMimeType: String? = null
     ): SubmitResult {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).apply {
             timeZone = TimeZone.getTimeZone("Asia/Jakarta")
@@ -979,6 +983,13 @@ class FleetRepository(
                     photoName = "ODO_${armadaId}_${System.currentTimeMillis()}.jpg"
                 }
 
+                var base64Nota: String? = null
+                var finalNotaName: String? = null
+                if (notaBbmBytes != null) {
+                    base64Nota = Base64.encodeToString(notaBbmBytes, Base64.NO_WRAP)
+                    finalNotaName = notaBbmFileName ?: "NOTA_BBM_${armadaId}_${System.currentTimeMillis()}.jpg"
+                }
+
                 val logData = LogDataApiItem(
                     driverName = driverName,
                     armadaId = armadaId,
@@ -986,7 +997,10 @@ class FleetRepository(
                     base64Photo = base64Photo,
                     photoName = photoName,
                     photoMimeType = photoMimeType ?: "image/jpeg",
-                    catatan = catatan
+                    catatan = catatan,
+                    notaBbmBase64 = base64Nota,
+                    notaBbmFileName = finalNotaName,
+                    notaBbmMimeType = notaBbmMimeType ?: "image/jpeg"
                 )
 
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
@@ -1003,6 +1017,7 @@ class FleetRepository(
                 if (response.success) {
                     val localArmada = db.armadaDao().getArmadaById(armadaId)
                     val sisaKm = response.sisaKm ?: if (localArmada != null) (localArmada.kmServiceBerikutnya - kmTerdeteksi) else 5000
+                    val returnedNotaUrl = response.notaBbmUrl ?: ""
                     
                     if (localArmada != null) {
                         val updated = localArmada.copy(
@@ -1021,14 +1036,16 @@ class FleetRepository(
                             kmTerdeteksi = kmTerdeteksi,
                             linkFoto = response.linkFoto ?: "",
                             catatan = catatan ?: "",
-                            namaDriver = driverName
+                            namaDriver = driverName,
+                            notaBbmUrl = returnedNotaUrl
                         )
                     )
 
                     SubmitResult.Success(
                         sisaKm = sisaKm,
                         serviceAlert = response.serviceAlert ?: (sisaKm < 1000),
-                        linkFoto = response.linkFoto ?: ""
+                        linkFoto = response.linkFoto ?: "",
+                        notaBbmUrl = returnedNotaUrl
                     )
                 } else {
                     SubmitResult.Error(response.message ?: "Gagal submit log.")
@@ -1069,6 +1086,12 @@ class FleetRepository(
                 ""
             }
 
+            val mockNotaLink = if (notaBbmBytes != null) {
+                "https://drive.google.com/open?id=mock_nota_id"
+            } else {
+                ""
+            }
+
             val updated = baseArmada.copy(
                 kmSaatIni = kmTerdeteksi,
                 sisaKm = sisaKm,
@@ -1089,7 +1112,8 @@ class FleetRepository(
                     kmTerdeteksi = kmTerdeteksi,
                     linkFoto = mockPhotoLink,
                     catatan = catatan ?: "",
-                    namaDriver = driverName
+                    namaDriver = driverName,
+                    notaBbmUrl = mockNotaLink
                 )
             )
 
@@ -1098,7 +1122,8 @@ class FleetRepository(
             return SubmitResult.Success(
                 sisaKm = sisaKm,
                 serviceAlert = serviceAlert,
-                linkFoto = mockPhotoLink
+                linkFoto = mockPhotoLink,
+                notaBbmUrl = mockNotaLink
             )
         }
     }
@@ -1804,7 +1829,12 @@ sealed interface LoginResult {
 }
 
 sealed interface SubmitResult {
-    data class Success(val sisaKm: Int, val serviceAlert: Boolean, val linkFoto: String) : SubmitResult
+    data class Success(
+        val sisaKm: Int,
+        val serviceAlert: Boolean,
+        val linkFoto: String,
+        val notaBbmUrl: String = ""
+    ) : SubmitResult
     data class Error(val message: String) : SubmitResult
 }
 
