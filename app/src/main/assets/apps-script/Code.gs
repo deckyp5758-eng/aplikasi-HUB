@@ -142,11 +142,11 @@ function doGet(e) {
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
-        latestVersionCode: 5,
-        latestVersionName: "1.2.1",
-        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.2.1/H033-debug-v1.2.1-code5.apk",
+        latestVersionCode: 7,
+        latestVersionName: "1.4.0",
+        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.4.0/H033-v1.4.0-code7.apk",
         forceUpdate: false,
-        changelog: "Rilis foto service dan peningkatan sinkronisasi aplikasi H033."
+        changelog: "Pembaruan v1.4.0: Tampilan riwayat log & nota BBM 7 hari terakhir serta optimasi sistem."
       });
     } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
       return jsonResponse(setupAllSheets(ss));
