@@ -42,6 +42,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: false
 
       - name: Ensure Gradle Wrapper Executable
         run: |
@@ -55,7 +57,7 @@ jobs:
           VERSION_CODE=$(grep "versionCode =" app/build.gradle.kts | head -n1 | tr -cd '0-9')
 
           if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
-            echo "Failed to extract version info from app/build.gradle.kts"
+            echo "::error::Gagal mengekstrak version info dari app/build.gradle.kts"
             exit 1
           fi
 
@@ -68,32 +70,86 @@ jobs:
           echo "Detected Version Code: ${VERSION_CODE}"
           echo "Detected Tag: ${TAG}"
 
-      - name: Build Debug APK
+      - name: Restore Signing Keystore from Secret
+        shell: bash
         run: |
-          ./gradlew :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=512m"
+          if [ -z "${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "::error::Signing secret H033 belum dikonfigurasi. Build dihentikan agar tidak membuat signing key baru yang tidak konsisten."
+            exit 1
+          fi
 
-      - name: Prepare APK Asset
+          SIGNING_DIR="${RUNNER_TEMP}/h033-signing"
+          mkdir -p "$SIGNING_DIR"
+          KEYSTORE_FILE="$SIGNING_DIR/debug.keystore"
+
+          # Tulis file keystore secara aman tanpa echo isi rahasia ke stdout
+          printf '%s' "${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > "$KEYSTORE_FILE"
+          chmod 600 "$KEYSTORE_FILE"
+
+          if [ ! -f "$KEYSTORE_FILE" ]; then
+            echo "::error::File keystore tidak ditemukan setelah proses pemulihan."
+            exit 1
+          fi
+
+          KEYSTORE_SIZE=$(stat -c%s "$KEYSTORE_FILE" 2>/dev/null || wc -c < "$KEYSTORE_FILE")
+          if [ "$KEYSTORE_SIZE" -le 0 ]; then
+            echo "::error::File keystore kosong (0 bytes)."
+            exit 1
+          fi
+
+          echo "Signing key berhasil dipulihkan secara aman (ukuran: ${KEYSTORE_SIZE} bytes, permission: 600)."
+
+      - name: Build Debug APK
+        env:
+          H033_DEBUG_KEYSTORE_PATH: ${{ runner.temp }}/h033-signing/debug.keystore
+          H033_DEBUG_STORE_PASSWORD: ${{ secrets.H033_DEBUG_STORE_PASSWORD || 'android' }}
+          H033_DEBUG_KEY_ALIAS: ${{ secrets.H033_DEBUG_KEY_ALIAS || 'androiddebugkey' }}
+          H033_DEBUG_KEY_PASSWORD: ${{ secrets.H033_DEBUG_KEY_PASSWORD || 'android' }}
+        run: |
+          ./gradlew :app:validateSigningDebug :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=512m"
+
+      - name: Validate and Prepare APK Asset
         id: prepare_apk
         shell: bash
         run: |
           VNAME="${{ steps.version_info.outputs.version_name }}"
           VCODE="${{ steps.version_info.outputs.version_code }}"
-          
-          # Temukan APK hasil build
-          APK_FILE=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n1)
-          if [ -z "$APK_FILE" ] || [ ! -f "$APK_FILE" ]; then
-            APK_FILE=$(find app/build/outputs/apk/ -name "*.apk" | head -n1)
+          EXPECTED_PKG="com.aistudio.fleetodologger.pzmrvk"
+
+          # Cari file APK hasil build
+          APK_SRC=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n1)
+          if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
+            APK_SRC=$(find app/build/outputs/apk/ -name "*.apk" | head -n1)
           fi
 
-          if [ -z "$APK_FILE" ] || [ ! -f "$APK_FILE" ]; then
-            echo "Error: File APK tidak ditemukan di folder build outputs!"
+          if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
+            echo "::error::File APK tidak ditemukan setelah proses build!"
             exit 1
           fi
 
+          APK_SIZE=$(stat -c%s "$APK_SRC" 2>/dev/null || wc -c < "$APK_SRC")
+          if [ "$APK_SIZE" -le 1000 ]; then
+            echo "::error::File APK kosong atau rusak (${APK_SIZE} bytes)!"
+            exit 1
+          fi
+
+          # Validasi applicationId / package name di manifest APK
+          python3 - << 'PYEOF' "$APK_SRC" "$EXPECTED_PKG"
+          import sys, zipfile
+          apk_path = sys.argv[1]
+          expected_pkg = sys.argv[2]
+          with zipfile.ZipFile(apk_path, 'r') as z:
+              manifest_data = z.read('AndroidManifest.xml')
+              if expected_pkg.encode('utf-8') not in manifest_data and expected_pkg.encode('utf-16le') not in manifest_data:
+                  print(f"::warning::Package name {expected_pkg} tidak terdeteksi langsung di string manifest")
+              else:
+                  print(f"Terverifikasi package name: {expected_pkg}")
+          PYEOF
+
           FINAL_APK_NAME="H033-v${VNAME}-code${VCODE}.apk"
-          cp "$APK_FILE" "$FINAL_APK_NAME"
+          cp "$APK_SRC" "$FINAL_APK_NAME"
           echo "apk_file_path=${FINAL_APK_NAME}" >> $GITHUB_OUTPUT
-          echo "Berhasil menyiapkan file release: $FINAL_APK_NAME"
+          echo "Berhasil memvalidasi dan menyiapkan release asset: $FINAL_APK_NAME ($APK_SIZE bytes)"
 
       - name: Create or Update GitHub Release
         shell: bash
@@ -105,24 +161,25 @@ jobs:
           APK_PATH: ${{ steps.prepare_apk.outputs.apk_file_path }}
         run: |
           TITLE="Rilis ${TAG} - Pembaruan Aplikasi H033"
-          NOTES=$(cat << 'EOF'
-          ### Pembaruan H033
-          - **Versi**: v1.4.0 (Build Code: 7)
-          - **Fitur Terbaru**:
+          BODY=$(cat << EOF
+          ### Pembaruan H033 (${TAG})
+          - **Versi**: ${VNAME} (Build Code: ${VCODE})
+          - **Package Name**: com.aistudio.fleetodologger.pzmrvk
+          - **Catatan Pembaruan**:
             - Tampilan riwayat log & foto nota BBM berdampingan dengan foto odometer (7 hari terakhir).
             - Tombol toggle 7 hari / Lihat Semua.
-            - Fitur in-app update otomatis langsung dari aplikasi driver.
+            - Pemulihan sistem in-app update otomatis dan peningkatan stabilitas.
           EOF
           )
 
-          echo "Membuat atau memperbarui release $TAG di GitHub..."
+          echo "Memeriksa apakah release $TAG sudah ada di GitHub..."
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG sudah ada, mengunggah ulang asset APK..."
+            echo "Release $TAG sudah ada, mengunggah asset APK terbaru dengan --clobber..."
             gh release upload "$TAG" "$APK_PATH" --clobber
           else
             echo "Membuat release baru $TAG..."
             gh release create "$TAG" "$APK_PATH" \
               --title "$TITLE" \
-              --notes "$NOTES"
+              --notes "$BODY"
           fi
-          echo "Selesai mempublikasikan release $TAG!"
+          echo "Berhasil menyelesaikan publikasi release $TAG!"
