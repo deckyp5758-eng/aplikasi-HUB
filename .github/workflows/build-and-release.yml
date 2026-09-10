@@ -29,9 +29,15 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
+      - name: Prepare Secrets & Environment
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env || echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env
+          fi
+
       - name: Build Debug APK
         run: |
-          ./gradlew :app:assembleDebug --stacktrace -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=512m"
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon --no-configuration-cache
 
       - name: Prepare APK Asset
         id: prepare_apk
