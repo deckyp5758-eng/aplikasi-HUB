@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -34,117 +32,52 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
-      - name: Prepare Signing Keystore
-        id: keystore
-        env:
-          SECRET_KEY: ${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}
-        run: |
-          SIGNING_DIR="${RUNNER_TEMP}/h033-signing"
-          mkdir -p "$SIGNING_DIR"
-          KEYSTORE_PATH="$SIGNING_DIR/debug.keystore"
-
-          # 1. Cek dari GitHub Secret
-          if [ -n "$SECRET_KEY" ]; then
-            echo "Memulihkan keystore dari GitHub Secret..."
-            echo "$SECRET_KEY" | tr -d '\r\n ' | base64 --decode > "$KEYSTORE_PATH"
-          fi
-
-          # 2. Jika belum ada di secret, cek file debug.keystore.base64 di repo
-          if [ ! -s "$KEYSTORE_PATH" ] && [ -f "debug.keystore.base64" ]; then
-            echo "Memulihkan keystore dari file repo debug.keystore.base64..."
-            cat "debug.keystore.base64" | tr -d '\r\n ' | base64 --decode > "$KEYSTORE_PATH"
-          fi
-
-          # 3. Validasi Keystore atau fallback otomatis
-          chmod 600 "$KEYSTORE_PATH"
-          if keytool -list -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey >/dev/null 2>&1; then
-            echo "Keystore resmi H033 berhasil divalidasi!"
-          else
-            echo "::warning::Membuat keystore fallback..."
-            keytool -genkeypair -v -keystore "$KEYSTORE_PATH" -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
-          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
-
-      - name: Extract Version Info
-        id: app_version
-        run: |
-          VNAME=$(grep "versionName" app/build.gradle.kts | head -n 1 | sed -E 's/.*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' | tr -d '[:space:]')
-          VCODE=$(grep "versionCode" app/build.gradle.kts | head -n 1 | sed -E 's/.*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/' | tr -d '[:space:]')
-          
-          if [ -z "$VNAME" ]; then VNAME="1.4.0"; fi
-          if [ -z "$VCODE" ]; then VCODE="7"; fi
-
-          echo "version_name=$VNAME" >> "$GITHUB_OUTPUT"
-          echo "version_code=$VCODE" >> "$GITHUB_OUTPUT"
-          echo "tag_name=v$VNAME" >> "$GITHUB_OUTPUT"
-          echo "release_name=Release v$VNAME (Code $VCODE)" >> "$GITHUB_OUTPUT"
-          echo "Version: v$VNAME (Code $VCODE)"
-
       - name: Build Debug APK
-        env:
-          H033_DEBUG_KEYSTORE_PATH: ${{ steps.keystore.outputs.keystore_path }}
-          H033_DEBUG_STORE_PASSWORD: ${{ secrets.H033_DEBUG_STORE_PASSWORD || 'android' }}
-          H033_DEBUG_KEY_ALIAS: ${{ secrets.H033_DEBUG_KEY_ALIAS || 'androiddebugkey' }}
-          H033_DEBUG_KEY_PASSWORD: ${{ secrets.H033_DEBUG_KEY_PASSWORD || 'android' }}
         run: |
           ./gradlew :app:assembleDebug --stacktrace -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=512m"
 
       - name: Prepare APK Asset
         id: prepare_apk
         run: |
-          APK_SRC=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
+          APK_SRC=$(find app/build/outputs/apk/ -name "*.apk" | head -n 1)
           if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
-            APK_SRC=$(find app/build/outputs/apk/ -name "*.apk" | head -n 1)
-          fi
-
-          if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
-            echo "::error::File APK tidak ditemukan hasil build!"
+            echo "::error::File APK tidak ditemukan!"
             exit 1
           fi
 
-          VNAME="${{ steps.app_version.outputs.version_name }}"
-          VCODE="${{ steps.app_version.outputs.version_code }}"
+          VNAME=$(grep "versionName" app/build.gradle.kts | head -n 1 | sed -E 's/.*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' | tr -d '[:space:]')
+          VCODE=$(grep "versionCode" app/build.gradle.kts | head -n 1 | sed -E 's/.*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/' | tr -d '[:space:]')
+          
+          if [ -z "$VNAME" ]; then VNAME="1.4.0"; fi
+          if [ -z "$VCODE" ]; then VCODE="7"; fi
+
           APK_DEST="H033-v${VNAME}-code${VCODE}.apk"
           cp "$APK_SRC" "$APK_DEST"
 
+          echo "version_name=$VNAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VCODE" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$VNAME" >> "$GITHUB_OUTPUT"
           echo "apk_path=$APK_DEST" >> "$GITHUB_OUTPUT"
           echo "apk_name=$APK_DEST" >> "$GITHUB_OUTPUT"
-          echo "APK Siap: $APK_DEST ($(du -h "$APK_DEST" | cut -f1))"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.prepare_apk.outputs.apk_name }}
           path: ${{ steps.prepare_apk.outputs.apk_path }}
-          if-no-files-found: error
-          retention-days: 30
 
       - name: Create or Update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ steps.app_version.outputs.tag_name }}
-          RELEASE_NAME: ${{ steps.app_version.outputs.release_name }}
+          TAG_NAME: ${{ steps.prepare_apk.outputs.tag_name }}
           APK_PATH: ${{ steps.prepare_apk.outputs.apk_path }}
         run: |
-          cat << 'EOF' > release_notes.md
-          ## 🚀 Rilis Pembaruan Aplikasi H033
-
-          ### 📦 Informasi Rilis:
-          - **Versi**: ${{ steps.app_version.outputs.version_name }}
-          - **Version Code**: ${{ steps.app_version.outputs.version_code }}
-          - **Kompatibilitas**: Menggunakan signing key resmi yang sama (dapat langsung di-update tanpa uninstall).
-
-          ### 📥 Unduh APK:
-          Silakan unduh file APK di bawah ini dan pasang langsung pada perangkat.
-          EOF
-
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            echo "Release $TAG_NAME sudah ada, memperbarui file APK..."
+            echo "Memperbarui rilis $TAG_NAME..."
             gh release upload "$TAG_NAME" "$APK_PATH" --clobber
           else
-            echo "Membuat release baru $TAG_NAME..."
+            echo "Membuat rilis baru $TAG_NAME..."
             gh release create "$TAG_NAME" "$APK_PATH" \
-              --title "$RELEASE_NAME" \
-              --notes-file release_notes.md
+              --title "Release $TAG_NAME" \
+              --notes "Pembaruan Aplikasi H033 $TAG_NAME"
           fi
