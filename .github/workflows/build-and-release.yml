@@ -37,7 +37,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          ./gradlew :app:assembleDebug --stacktrace -Dksp.use.ksp2=true -Dksp.incremental=false -Dorg.gradle.parallel=false
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Prepare APK Asset
         id: prepare_apk
