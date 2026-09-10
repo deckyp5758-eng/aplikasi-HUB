@@ -1681,58 +1681,6 @@ fun HistoryScreen(viewModel: FleetViewModel) {
                 }
             }
             
-            // 2. Horizontal Stats Row Box (Dynamic values computed real-time!)
-            item {
-                val totalArmada = armadaList.size
-                val amanCount = armadaList.count { it.sisaKm >= 1000 }
-                val perluPerhatianCount = armadaList.count { it.sisaKm < 1000 }
-                val averageSisaKm = if (armadaList.isNotEmpty()) {
-                    armadaList.map { it.sisaKm }.average().toInt()
-                } else {
-                    0
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    StatCard(
-                        title = "Total Armada",
-                        value = "$totalArmada",
-                        unit = "Unit",
-                        icon = Icons.Default.LocalShipping,
-                        iconColor = Color(0xFF0054A6),
-                        circleBgColor = Color(0xFFE6F0FA)
-                    )
-                    StatCard(
-                        title = "Aman",
-                        value = "$amanCount",
-                        unit = "Unit",
-                        icon = Icons.Default.CheckCircle,
-                        iconColor = Color(0xFF2E7D32),
-                        circleBgColor = Color(0xFFE8F5E9)
-                    )
-                    StatCard(
-                        title = "Perlu Perhatian",
-                        value = "$perluPerhatianCount",
-                        unit = "Unit",
-                        icon = Icons.Default.Warning,
-                        iconColor = Color(0xFFD32F2F),
-                        circleBgColor = Color(0xFFFFEBEE)
-                    )
-                    StatCard(
-                        title = "Rata-rata Sisa KM",
-                        value = formatKm(averageSisaKm),
-                        unit = "KM",
-                        icon = Icons.Default.TrendingUp,
-                        iconColor = Color(0xFF8E24AA),
-                        circleBgColor = Color(0xFFF3E5F5)
-                    )
-                }
-            }
             
             // 3. Monitor Armada Title Section
             item {
