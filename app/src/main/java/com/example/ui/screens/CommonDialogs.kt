@@ -15,8 +15,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import android.net.Uri
 import coil.compose.AsyncImage
 import com.example.utils.CommonUtils
+
+fun getDirectDriveImageUrl(url: String): String = CommonUtils.getDirectDriveImageUrl(url)
+fun downloadImage(context: Context, imageUrl: String) = CommonUtils.downloadImage(context, imageUrl)
+fun getFileNameFromUri(context: Context, uri: Uri): String = CommonUtils.getFileNameFromUri(context, uri)
+fun getFileSizeFromUri(context: Context, uri: Uri): Long = CommonUtils.getFileSizeFromUri(context, uri)
+fun formatFileSize(bytes: Long): String = CommonUtils.formatFileSize(bytes)
 
 @Composable
 fun FullScreenImageDialog(imageUrl: String, onDismiss: () -> Unit) {

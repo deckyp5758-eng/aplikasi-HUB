@@ -84,4 +84,60 @@ object CommonUtils {
             km.toString()
         }
     }
+
+    fun getFileNameFromUri(context: Context, uri: Uri): String {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) {
+                        result = cursor.getString(index)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                cursor?.close()
+            }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/') ?: -1
+            if (cut != -1 && result != null) {
+                result = result.substring(cut + 1)
+            }
+        }
+        return result ?: "nota_bbm_${System.currentTimeMillis()}"
+    }
+
+    fun getFileSizeFromUri(context: Context, uri: Uri): Long {
+        var size = 0L
+        if (uri.scheme == "content") {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (index >= 0) {
+                        size = cursor.getLong(index)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                cursor?.close()
+            }
+        }
+        return size
+    }
+
+    fun formatFileSize(bytes: Long): String {
+        return when {
+            bytes <= 0 -> "0 B"
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0)
+            else -> String.format(java.util.Locale.US, "%.2f MB", bytes / (1024.0 * 1024.0))
+        }
+    }
 }
