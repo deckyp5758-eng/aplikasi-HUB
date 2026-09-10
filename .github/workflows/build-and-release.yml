@@ -14,6 +14,7 @@ jobs:
   build:
     name: Build & Release H033 APK
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout Repository
@@ -33,28 +34,43 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
-      - name: Restore Keystore from Secret
+      - name: Prepare Signing Keystore
         id: keystore
+        shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}
+          SECRET_B64: ${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Secret H033_DEBUG_KEYSTORE_BASE64 belum dikonfigurasi di GitHub Secrets!"
-            exit 1
-          fi
-
           SIGNING_DIR="${RUNNER_TEMP}/h033-signing"
           mkdir -p "$SIGNING_DIR"
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$SIGNING_DIR/debug.keystore"
-          chmod 600 "$SIGNING_DIR/debug.keystore"
+          KEYSTORE_PATH="$SIGNING_DIR/debug.keystore"
 
-          if [ ! -s "$SIGNING_DIR/debug.keystore" ]; then
-            echo "::error::Gagal membuat debug.keystore dari Base64 secret!"
+          # Prioritas 1: Secret dari GitHub Actions
+          # Prioritas 2: File debug.keystore.base64 di repo jika ada
+          # Prioritas 3: Embedded Base64 asli H033 (SHA-256: 8B:7E:65:17:...)
+          if [ -n "$SECRET_B64" ]; then
+            echo "Menggunakan signing key dari GitHub Secrets..."
+            echo "$SECRET_B64" | tr -d '\r\n ' | base64 -d > "$KEYSTORE_PATH"
+          elif [ -f "debug.keystore.base64" ]; then
+            echo "Menggunakan signing key dari file debug.keystore.base64..."
+            cat "debug.keystore.base64" | tr -d '\r\n ' | base64 -d > "$KEYSTORE_PATH"
+          else
+            echo "Menggunakan embedded signing key asli H033..."
+            cat << 'KEYB64' | tr -d '\r\n ' | base64 -d > "$KEYSTORE_PATH"
+          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
+          KEYB64
+          fi
+
+          chmod 600 "$KEYSTORE_PATH"
+
+          # Verifikasi bahwa file keystore valid
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey >/dev/null 2>&1
+          if [ $? -ne 0 ]; then
+            echo "::error::File keystore tidak valid atau password/alias salah!"
             exit 1
           fi
 
-          echo "keystore_path=$SIGNING_DIR/debug.keystore" >> "$GITHUB_OUTPUT"
-          echo "Keystore berhasil dipulihkan dengan aman."
+          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "Signing Keystore berhasil disiapkan dan divalidasi."
 
       - name: Extract App Version from Gradle
         id: app_version
@@ -69,7 +85,7 @@ jobs:
           echo "version_code=$VCODE" >> "$GITHUB_OUTPUT"
           echo "tag_name=v$VNAME" >> "$GITHUB_OUTPUT"
           echo "release_name=Release v$VNAME (Code $VCODE)" >> "$GITHUB_OUTPUT"
-          echo "Version Name: $VNAME, Version Code: $VCODE"
+          echo "Version: v$VNAME (Code $VCODE)"
 
       - name: Build Debug APK with Signing
         env:
@@ -78,7 +94,7 @@ jobs:
           H033_DEBUG_KEY_ALIAS: ${{ secrets.H033_DEBUG_KEY_ALIAS || 'androiddebugkey' }}
           H033_DEBUG_KEY_PASSWORD: ${{ secrets.H033_DEBUG_KEY_PASSWORD || 'android' }}
         run: |
-          ./gradlew :app:validateSigningDebug :app:assembleDebug --stacktrace
+          ./gradlew :app:validateSigningDebug :app:assembleDebug --stacktrace -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=512m"
 
       - name: Verify and Prepare APK for Release
         id: prepare_apk
@@ -97,6 +113,14 @@ jobs:
           echo "apk_path=$APK_DEST" >> "$GITHUB_OUTPUT"
           echo "apk_name=$APK_DEST" >> "$GITHUB_OUTPUT"
           echo "APK siap: $APK_DEST ($(du -h "$APK_DEST" | cut -f1))"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepare_apk.outputs.apk_name }}
+          path: ${{ steps.prepare_apk.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Create or Update GitHub Release
         env:
@@ -126,3 +150,4 @@ jobs:
               --title "$RELEASE_NAME" \
               --notes-file release_notes.md
           fi
+
