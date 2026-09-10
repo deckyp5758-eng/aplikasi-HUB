@@ -37,7 +37,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          ./gradlew :app:assembleDebug --stacktrace -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          ./gradlew :app:assembleDebug --stacktrace -Dksp.use.ksp2=true -Dksp.incremental=false -Dorg.gradle.parallel=false
 
       - name: Prepare APK Asset
         id: prepare_apk
