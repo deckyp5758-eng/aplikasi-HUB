@@ -49,18 +49,18 @@ jobs:
             echo "$SECRET_KEY" | tr -d '\r\n ' | base64 --decode > "$KEYSTORE_PATH"
           fi
 
-          # 2. Jika belum valid, cek file debug.keystore.base64 di repo
+          # 2. Jika belum ada di secret, cek file debug.keystore.base64 di repo
           if [ ! -s "$KEYSTORE_PATH" ] && [ -f "debug.keystore.base64" ]; then
             echo "Memulihkan keystore dari file repo debug.keystore.base64..."
             cat "debug.keystore.base64" | tr -d '\r\n ' | base64 --decode > "$KEYSTORE_PATH"
           fi
 
-          # 3. Validasi Keystore
+          # 3. Validasi Keystore atau fallback otomatis
           chmod 600 "$KEYSTORE_PATH"
           if keytool -list -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey >/dev/null 2>&1; then
             echo "Keystore resmi H033 berhasil divalidasi!"
           else
-            echo "::warning::Keystore tidak ditemukan atau tidak valid, membuat default androiddebugkey fallback..."
+            echo "::warning::Membuat keystore fallback..."
             keytool -genkeypair -v -keystore "$KEYSTORE_PATH" -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
           fi
 
