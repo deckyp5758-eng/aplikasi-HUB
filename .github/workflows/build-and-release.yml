@@ -37,7 +37,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          ./gradlew :app:assembleDebug --stacktrace --no-daemon
+          ./gradlew :app:assembleDebug -x test -x lint --stacktrace -Dorg.gradle.daemon=true -Dorg.gradle.parallel=false
 
       - name: Prepare APK Asset
         id: prepare_apk
