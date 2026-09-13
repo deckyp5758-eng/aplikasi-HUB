@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 data class NotaBbmState(
     val uri: Uri? = null,
@@ -69,6 +70,18 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadAndInstallApk(url: String) {
         apkUpdateManager.downloadAndInstallApk(url)
+    }
+
+    fun installApk(file: File) {
+        apkUpdateManager.installApk(file)
+    }
+
+    fun cancelUpdateDownload() {
+        apkUpdateManager.cancelDownload()
+    }
+
+    fun openUpdateInBrowser(url: String) {
+        apkUpdateManager.openInBrowser(url)
     }
 
     fun dismissUpdateDialog() {

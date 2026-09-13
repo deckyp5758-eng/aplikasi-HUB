@@ -175,6 +175,12 @@ fun AppContent(viewModel: FleetViewModel) {
                 onUpdateClick = { apkUrl ->
                     viewModel.downloadAndInstallApk(apkUrl)
                 },
+                onInstallClick = { file ->
+                    viewModel.installApk(file)
+                },
+                onCancelDownload = {
+                    viewModel.cancelUpdateDownload()
+                },
                 onDismiss = {
                     viewModel.dismissUpdateDialog()
                 }
