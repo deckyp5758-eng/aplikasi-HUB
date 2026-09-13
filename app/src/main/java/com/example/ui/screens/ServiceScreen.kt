@@ -81,13 +81,8 @@ fun ServiceScreen(viewModel: FleetViewModel) {
     var catatanInput by remember { mutableStateOf("") }
     var dropdownExpanded by remember { mutableStateOf(false) }
 
-    // Odometer Correction state
-    var modeKoreksiChecked by remember { mutableStateOf(false) }
-    var alasanKoreksiInput by remember { mutableStateOf("") }
-    var showConfirmDialog by remember { mutableStateOf(false) }
-    var pendingKmVal by remember { mutableStateOf(0) }
-    var pendingArmadaId by remember { mutableStateOf("") }
-    var pendingCatatan by remember { mutableStateOf<String?>(null) }
+    // Odometer / Service state
+    var showConfirmNotice by remember { mutableStateOf(false) }
 
     LaunchedEffect(serviceSuccessMessage) {
         serviceSuccessMessage?.let { msg ->
@@ -95,8 +90,6 @@ fun ServiceScreen(viewModel: FleetViewModel) {
             selectedArmadaId = ""
             kmServisInput = ""
             catatanInput = ""
-            modeKoreksiChecked = false
-            alasanKoreksiInput = ""
             viewModel.clearServiceMessages()
         }
     }
@@ -108,39 +101,7 @@ fun ServiceScreen(viewModel: FleetViewModel) {
         }
     }
 
-    if (showConfirmDialog) {
-        val matchingArmada = armadaList.find { it.armadaId == pendingArmadaId }
-        val kmLama = matchingArmada?.kmSaatIni ?: 0
-        AlertDialog(
-            onDismissRequest = { showConfirmDialog = false },
-            title = { Text("Konfirmasi Koreksi Odometer", fontWeight = FontWeight.Bold) },
-            text = {
-                Text("Anda akan mengubah KM dari $kmLama menjadi $pendingKmVal. Perubahan ini akan dicatat sebagai koreksi odometer. Lanjutkan?")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showConfirmDialog = false
-                        viewModel.submitServiceLog(
-                            armadaId = pendingArmadaId,
-                            kmServis = pendingKmVal,
-                            catatan = pendingCatatan,
-                            allowLowerKm = true,
-                            correctionReason = alasanKoreksiInput.trim()
-                        )
-                    },
-                    modifier = Modifier.testTag("confirm_correction_button")
-                ) {
-                    Text("Lanjutkan")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
+
 
     LazyColumn(
         modifier = Modifier
@@ -265,7 +226,7 @@ fun ServiceScreen(viewModel: FleetViewModel) {
                                 kmServisInput = input
                             }
                         },
-                        label = { Text("KM Saat Servis (Wajib)") },
+                        label = { Text("KM Saat Servis Dilakukan (Wajib)") },
                         placeholder = { Text("e.g. 52000") },
                         leadingIcon = { Icon(Icons.Default.Speed, contentDescription = "Speedometer Icon") },
                         modifier = Modifier
@@ -275,47 +236,52 @@ fun ServiceScreen(viewModel: FleetViewModel) {
                         singleLine = true
                     )
 
-                    // Mode Koreksi Odometer Option
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("mode_koreksi_row"),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Mode Koreksi Odometer",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                "Aktifkan jika KM lebih rendah dari KM saat ini (koreksi data / ganti odometer).",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = modeKoreksiChecked,
-                            onCheckedChange = { modeKoreksiChecked = it },
-                            modifier = Modifier.testTag("mode_koreksi_switch")
-                        )
-                    }
-
-                    if (modeKoreksiChecked) {
-                        OutlinedTextField(
-                            value = alasanKoreksiInput,
-                            onValueChange = { alasanKoreksiInput = it },
-                            label = { Text("Alasan Koreksi Odometer (Wajib, min 10 karakter)") },
-                            placeholder = { Text("e.g. Salah input data sebelumnya / Penggantian unit odometer baru") },
-                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = "Info Icon") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("alasan_koreksi_input_field"),
+                    // Kalkulasi Otomatis KM Servis Berikutnya (+10.000 KM)
+                    val kmInputNumber = kmServisInput.toIntOrNull()
+                    val matchingArmada = armadaList.find { it.armadaId == selectedArmadaId }
+                    if (kmInputNumber != null && kmInputNumber > 0) {
+                        val nextServiceTarget = kmInputNumber + 10000
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            minLines = 2,
-                            maxLines = 4
-                        )
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "Target Servis Berikutnya: ${CommonUtils.formatKm(nextServiceTarget)} KM",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Text(
+                                    "Otomatis disetel +10.000 KM dari KM servis yang diinput (${CommonUtils.formatKm(kmInputNumber)} KM).",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                                if (matchingArmada != null && kmInputNumber < matchingArmada.kmSaatIni) {
+                                    Text(
+                                        "ℹ️ KM servis dicatat di ${CommonUtils.formatKm(kmInputNumber)} KM (Odometer unit: ${CommonUtils.formatKm(matchingArmada.kmSaatIni)} KM).",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // 3. Catatan Servis / Penggantian Part
@@ -347,29 +313,13 @@ fun ServiceScreen(viewModel: FleetViewModel) {
                                 android.widget.Toast.makeText(context, "KM Saat Servis wajib diisi dengan angka valid!", android.widget.Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            val matchingArmada = armadaList.find { it.armadaId == selectedArmadaId }
-                            if (matchingArmada != null && kmVal < matchingArmada.kmSaatIni) {
-                                if (!modeKoreksiChecked) {
-                                    android.widget.Toast.makeText(context, "KM lebih rendah dari KM saat ini. Aktifkan Mode Koreksi Odometer hanya jika ini adalah koreksi data yang sah.", android.widget.Toast.LENGTH_LONG).show()
-                                    return@Button
-                                } else {
-                                    if (alasanKoreksiInput.trim().length < 10) {
-                                        android.widget.Toast.makeText(context, "Alasan koreksi odometer wajib diisi minimal 10 karakter!", android.widget.Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    pendingKmVal = kmVal
-                                    pendingArmadaId = selectedArmadaId
-                                    pendingCatatan = catatanInput.ifBlank { null }
-                                    showConfirmDialog = true
-                                    return@Button
-                                }
-                            }
 
                             viewModel.submitServiceLog(
                                 armadaId = selectedArmadaId,
                                 kmServis = kmVal,
                                 catatan = catatanInput.ifBlank { null },
-                                allowLowerKm = false
+                                allowLowerKm = true,
+                                correctionReason = "Update Servis Berkala (+10.000 KM)"
                             )
                         },
                         enabled = !serviceLoading,
@@ -385,10 +335,12 @@ fun ServiceScreen(viewModel: FleetViewModel) {
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Menyimpan & Menyetel Jadwal Servis...")
                         } else {
                             Icon(Icons.Default.Build, contentDescription = "Save Icon")
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Simpan Data Servis", fontWeight = FontWeight.Bold)
+                            Text("Simpan Data Servis (+10.000 KM)", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

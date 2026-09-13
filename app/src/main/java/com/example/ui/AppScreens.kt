@@ -270,17 +270,6 @@ fun MainAppScaffold(viewModel: FleetViewModel, driverName: String) {
                         }
                     },
                     actions = {
-                        // Settings Button (Directly visible)
-                        IconButton(
-                            onClick = { activeScreen = "settings" },
-                            modifier = Modifier.testTag("settings_action")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Pengaturan",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
                         // Notifications with Red Dot
                         IconButton(onClick = { /* No-op notifications */ }) {
                             Box {

@@ -900,6 +900,20 @@ fun DetailArmadaDialog(
                                             val rrBan = armadaTires.find { it.posisi.contains("Kanan", true) && it.posisi.contains("Belakang", true) }
                                             val spBan = armadaTires.find { it.posisi.contains("Serep", true) || it.posisi.contains("SP", true) }
 
+                                            fun createFallbackBan(posisi: String) = BanEntity(
+                                                armadaId = armada.armadaId,
+                                                noPolisi = armada.noPolisi,
+                                                posisi = posisi,
+                                                noSeri = "",
+                                                ukuran = "1000-20",
+                                                merk = "",
+                                                kondisi = "BAIK",
+                                                tekanan = "110",
+                                                keterangan = "",
+                                                barcode = "",
+                                                tahun = "2024"
+                                            )
+
                                             Column(
                                                 modifier = Modifier
                                                     .fillMaxSize()
@@ -915,13 +929,13 @@ fun DetailArmadaDialog(
                                                     Box(
                                                         modifier = Modifier
                                                             .background(Color(0xFF1E293B).copy(alpha = 0.95f), RoundedCornerShape(8.dp))
-                                                            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-                                                            .clickable { flBan?.let { showEditBanDialog = it } }
+                                                            .border(1.dp, if (flBan != null) Color(0xFF38BDF8) else Color(0xFF10B981), RoundedCornerShape(8.dp))
+                                                            .clickable { showEditBanDialog = flBan ?: createFallbackBan("Depan Kiri") }
                                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                                     ) {
                                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Text("FL", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF38BDF8))
-                                                            Text(flBan?.barcode ?: flBan?.noSeri ?: "-", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = Color.White)
+                                                            Text("FL", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = if (flBan != null) Color(0xFF38BDF8) else Color(0xFF10B981))
+                                                            Text(flBan?.barcode?.ifEmpty { null } ?: flBan?.noSeri?.ifEmpty { null } ?: "+ Pasang", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = if (flBan != null) Color.White else Color(0xFF10B981))
                                                         }
                                                     }
 
@@ -929,13 +943,49 @@ fun DetailArmadaDialog(
                                                     Box(
                                                         modifier = Modifier
                                                             .background(Color(0xFF1E293B).copy(alpha = 0.95f), RoundedCornerShape(8.dp))
-                                                            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-                                                            .clickable { frBan?.let { showEditBanDialog = it } }
+                                                            .border(1.dp, if (frBan != null) Color(0xFF38BDF8) else Color(0xFF10B981), RoundedCornerShape(8.dp))
+                                                            .clickable { showEditBanDialog = frBan ?: createFallbackBan("Depan Kanan") }
                                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                                     ) {
                                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Text("FR", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF38BDF8))
-                                                            Text(frBan?.barcode ?: frBan?.noSeri ?: "-", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = Color.White)
+                                                            Text("FR", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = if (frBan != null) Color(0xFF38BDF8) else Color(0xFF10B981))
+                                                            Text(frBan?.barcode?.ifEmpty { null } ?: frBan?.noSeri?.ifEmpty { null } ?: "+ Pasang", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = if (frBan != null) Color.White else Color(0xFF10B981))
+                                                        }
+                                                    }
+                                                }
+
+                                                // Middle Row: Interactive Battery (Aki) Indicator Pill
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    val akiBorderColor = if (akiResult.isDue) Color(0xFFEF4444) else Color(0xFF38BDF8)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .background(Color(0xFF0F172A).copy(alpha = 0.95f), RoundedCornerShape(8.dp))
+                                                            .border(1.dp, akiBorderColor, RoundedCornerShape(8.dp))
+                                                            .clickable { showEditBanDialog = armadaAki }
+                                                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.BatteryChargingFull,
+                                                                contentDescription = "Aki Unit",
+                                                                tint = akiBorderColor,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                            Text(
+                                                                text = "AKI: ${(armadaAki.barcode ?: "").ifEmpty { "0255KDR" }}",
+                                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                                color = Color.White
+                                                            )
+                                                            if (akiResult.isDue) {
+                                                                Text(
+                                                                    text = "⚠️ GANTI",
+                                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                                                    color = Color(0xFFEF4444)
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -949,13 +999,13 @@ fun DetailArmadaDialog(
                                                     Box(
                                                         modifier = Modifier
                                                             .background(Color(0xFF1E293B).copy(alpha = 0.95f), RoundedCornerShape(8.dp))
-                                                            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-                                                            .clickable { rlBan?.let { showEditBanDialog = it } }
+                                                            .border(1.dp, if (rlBan != null) Color(0xFF38BDF8) else Color(0xFF10B981), RoundedCornerShape(8.dp))
+                                                            .clickable { showEditBanDialog = rlBan ?: createFallbackBan("Belakang Kiri") }
                                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                                     ) {
                                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Text("RL", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF38BDF8))
-                                                            Text(rlBan?.barcode ?: rlBan?.noSeri ?: "-", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = Color.White)
+                                                            Text("RL", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = if (rlBan != null) Color(0xFF38BDF8) else Color(0xFF10B981))
+                                                            Text(rlBan?.barcode?.ifEmpty { null } ?: rlBan?.noSeri?.ifEmpty { null } ?: "+ Pasang", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = if (rlBan != null) Color.White else Color(0xFF10B981))
                                                         }
                                                     }
 
@@ -963,13 +1013,13 @@ fun DetailArmadaDialog(
                                                     Box(
                                                         modifier = Modifier
                                                             .background(Color(0xFF1E293B).copy(alpha = 0.95f), RoundedCornerShape(8.dp))
-                                                            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-                                                            .clickable { rrBan?.let { showEditBanDialog = it } }
+                                                            .border(1.dp, if (rrBan != null) Color(0xFF38BDF8) else Color(0xFF10B981), RoundedCornerShape(8.dp))
+                                                            .clickable { showEditBanDialog = rrBan ?: createFallbackBan("Belakang Kanan") }
                                                             .padding(horizontal = 10.dp, vertical = 6.dp)
                                                     ) {
                                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Text("RR", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF38BDF8))
-                                                            Text(rrBan?.barcode ?: rrBan?.noSeri ?: "-", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = Color.White)
+                                                            Text("RR", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = if (rrBan != null) Color(0xFF38BDF8) else Color(0xFF10B981))
+                                                            Text(rrBan?.barcode?.ifEmpty { null } ?: rrBan?.noSeri?.ifEmpty { null } ?: "+ Pasang", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium), color = if (rrBan != null) Color.White else Color(0xFF10B981))
                                                         }
                                                     }
                                                 }
@@ -982,13 +1032,13 @@ fun DetailArmadaDialog(
                                                     Box(
                                                         modifier = Modifier
                                                             .background(Color(0xFF1E293B).copy(alpha = 0.95f), RoundedCornerShape(8.dp))
-                                                            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
-                                                            .clickable { spBan?.let { showEditBanDialog = it } }
+                                                            .border(1.dp, if (spBan != null) Color(0xFFF59E0B) else Color(0xFF10B981), RoundedCornerShape(8.dp))
+                                                            .clickable { showEditBanDialog = spBan ?: createFallbackBan("Serep") }
                                                             .padding(horizontal = 12.dp, vertical = 6.dp)
                                                     ) {
                                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                            Text("SEREP", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFFF59E0B))
-                                                            Text(spBan?.barcode ?: spBan?.noSeri ?: "-", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                                            Text("SEREP", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = if (spBan != null) Color(0xFFF59E0B) else Color(0xFF10B981))
+                                                            Text(spBan?.barcode?.ifEmpty { null } ?: spBan?.noSeri?.ifEmpty { null } ?: "+ Pasang", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
                                                         }
                                                     }
                                                 }

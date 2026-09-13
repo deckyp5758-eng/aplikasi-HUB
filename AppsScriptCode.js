@@ -1081,15 +1081,19 @@ function submitService(contents, ss, sheetMap) {
       ]);
     }
 
+    var intervalService = 10000;
     var kmServiceBerikutnya = kmServis + intervalService;
-    var sisaKm = kmServiceBerikutnya - kmServis;
+    var currentActualKm = (currentKm > 0) ? Math.max(currentKm, kmServis) : kmServis;
+    var sisaKm = kmServiceBerikutnya - currentActualKm;
+    var statusStr = (sisaKm < 0) ? "🚨 HARUS SERVICE" : (sisaKm < 1000 ? "⚠️ SERVICE <1000 KM" : "🟢 AMAN");
 
     var serviceSlice = armadaSheet.getRange(foundIdx + 1, 3, 1, 6).getValues();
-    serviceSlice[0][0] = kmServis; // Col C: KM SAAT INI
+    serviceSlice[0][0] = currentActualKm; // Col C: KM SAAT INI
     serviceSlice[0][1] = kmServis; // Col D: KM SERVICE TERAKHIR
+    serviceSlice[0][2] = intervalService; // Col E: INTERVAL SERVICE (10.000)
     serviceSlice[0][3] = kmServiceBerikutnya; // Col F: KM SERVICE BERIKUTNYA
     serviceSlice[0][4] = sisaKm; // Col G: SISA KM
-    serviceSlice[0][5] = "🟢 AMAN"; // Col H: STATUS
+    serviceSlice[0][5] = statusStr; // Col H: STATUS
 
     batchWriteRow(armadaSheet, foundIdx + 1, 3, serviceSlice[0]);
 
@@ -1097,7 +1101,7 @@ function submitService(contents, ss, sheetMap) {
       batchWriteRow(armadaSheet, foundIdx + 1, 11, [serviceData.catatan || ""]);
     }
 
-    var successMsg = allowLowerKm ? "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." : ("Data servis " + armadaId + " berhasil diperbarui. Status armada kembali AMAN!");
+    var successMsg = "Data servis " + armadaId + " berhasil diperbarui. Target servis berikutnya: " + kmServiceBerikutnya + " KM (+10.000 KM).";
     return { success: true, message: successMsg };
   } catch(e) {
     return { success: false, message: "Gagal menyimpan service log: " + e.toString() };

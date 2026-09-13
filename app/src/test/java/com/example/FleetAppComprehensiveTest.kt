@@ -386,4 +386,66 @@ class FleetAppComprehensiveTest {
         assertTrue(resUnregistered is LoginResult.Error)
         assertEquals("ID Driver atau Nama tidak terdaftar di sistem.", (resUnregistered as LoginResult.Error).message)
     }
+
+    @Test
+    fun testSubmitServiceLogAutoNextServicePlus10000() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = PreferenceManager(context)
+        prefs.isGoogleSheetsMode = false
+        val repository = FleetRepository(context, db, prefs)
+
+        // Seed armada with current KM 125000
+        val testArmada = ArmadaEntity(
+            armadaId = "HK99",
+            noPolisi = "AG 1234 XY",
+            kmSaatIni = 125000,
+            kmServiceTerakhir = 115000,
+            intervalService = 5000,
+            kmServiceBerikutnya = 120000,
+            sisaKm = -5000,
+            status = "🚨 HARUS SERVICE",
+            flag = "MERAH",
+            fotoKm = "",
+            catattan = ""
+        )
+        armadaDao.insertArmada(listOf(testArmada))
+
+        // Case 1: Input KM service lower than current actual KM (e.g. 120000 < 125000)
+        // Next service should automatically be 120000 + 10000 = 130000
+        val resultLower = repository.submitServiceLog(
+            armadaId = "HK99",
+            kmServis = 120000,
+            catatan = "Ganti oli mesin berkala",
+            allowLowerKm = true
+        )
+        assertTrue(resultLower is SubmitServiceResult.Success)
+
+        val updatedArmada = armadaDao.getArmadaById("HK99")
+        assertNotNull(updatedArmada)
+        assertEquals(120000, updatedArmada!!.kmServiceTerakhir)
+        assertEquals(130000, updatedArmada.kmServiceBerikutnya)
+        assertEquals(10000, updatedArmada.intervalService)
+        assertEquals(125000, updatedArmada.kmSaatIni) // Keeps maximum current actual KM
+        assertEquals(5000, updatedArmada.sisaKm) // 130000 - 125000 = 5000
+        assertEquals("🟢 AMAN", updatedArmada.status)
+
+        // Case 2: Input KM service higher than current actual KM (e.g. 135000 > 125000)
+        // Next service should automatically be 135000 + 10000 = 145000
+        val resultHigher = repository.submitServiceLog(
+            armadaId = "HK99",
+            kmServis = 135000,
+            catatan = "Ganti oli mesin & filter",
+            allowLowerKm = true
+        )
+        assertTrue(resultHigher is SubmitServiceResult.Success)
+
+        val updatedArmada2 = armadaDao.getArmadaById("HK99")
+        assertNotNull(updatedArmada2)
+        assertEquals(135000, updatedArmada2!!.kmServiceTerakhir)
+        assertEquals(145000, updatedArmada2.kmServiceBerikutnya)
+        assertEquals(10000, updatedArmada2.intervalService)
+        assertEquals(135000, updatedArmada2.kmSaatIni)
+        assertEquals(10000, updatedArmada2.sisaKm) // 145000 - 135000 = 10000
+        assertEquals("🟢 AMAN", updatedArmada2.status)
+    }
 }

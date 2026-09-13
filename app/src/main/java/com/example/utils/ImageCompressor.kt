@@ -107,7 +107,12 @@ object ImageCompressor {
         }
 
         // Step 4: Scale down if still slightly larger than maxDimension
-        return decodedBitmap?.let { scaleBitmapDown(it, maxDimension) }
+        val raw = decodedBitmap ?: return null
+        val scaled = scaleBitmapDown(raw, maxDimension)
+        if (scaled != raw) {
+            raw.recycle()
+        }
+        return scaled
     }
 
     /**

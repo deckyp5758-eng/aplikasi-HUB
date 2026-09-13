@@ -15,6 +15,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.example.utils.CommonUtils
 
 class FleetRepository(
     private val context: Context,
@@ -1210,7 +1211,7 @@ class FleetRepository(
         armadaId: String,
         kmServis: Int,
         catatan: String?,
-        allowLowerKm: Boolean = false,
+        allowLowerKm: Boolean = true,
         correctionReason: String? = null
     ): SubmitServiceResult {
         // Otomatis hapus catatan/keluhan armada saat service berkala dilakukan
@@ -1218,6 +1219,9 @@ class FleetRepository(
 
         val isSheetsMode = prefs.isGoogleSheetsMode
         val driverName = prefs.loggedInDriverName.ifBlank { "Driver" }
+        val interval = 10000
+        val nextService = kmServis + interval
+
         if (isSheetsMode) {
             return try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
@@ -1227,9 +1231,9 @@ class FleetRepository(
                         armadaId = armadaId,
                         kmServis = kmServis,
                         catatan = catatan,
-                        allowLowerKm = allowLowerKm,
-                        correctionReason = correctionReason,
-                        correctionType = if (allowLowerKm) "ODOMETER_CORRECTION" else null,
+                        allowLowerKm = true,
+                        correctionReason = correctionReason ?: "Servis Berkala (+10.000 KM)",
+                        correctionType = "SERVICE_LOG",
                         driverName = driverName
                     ),
                     spreadsheetId = SPREADSHEET_ARMADA,
@@ -1239,19 +1243,21 @@ class FleetRepository(
                 if (response.success) {
                     val localArmada = db.armadaDao().getArmadaById(armadaId)
                     if (localArmada != null) {
-                        val interval = localArmada.intervalService
-                        val nextService = kmServis + interval
+                        val currentActualKm = if (localArmada.kmSaatIni > 0) maxOf(localArmada.kmSaatIni, kmServis) else kmServis
+                        val sisaKm = nextService - currentActualKm
+                        val statusStr = if (sisaKm < 0) "🚨 HARUS SERVICE" else if (sisaKm < 1000) "⚠️ SERVICE <1000 KM" else "🟢 AMAN"
                         val updated = localArmada.copy(
                             kmServiceTerakhir = kmServis,
-                            kmSaatIni = kmServis,
+                            kmSaatIni = currentActualKm,
+                            intervalService = interval,
                             kmServiceBerikutnya = nextService,
-                            sisaKm = interval,
-                            status = "🟢 AMAN",
+                            sisaKm = sisaKm,
+                            status = statusStr,
                             catattan = "" // Otomatis terhapus setelah service berkala
                         )
                         db.armadaDao().updateArmada(updated)
                     }
-                    val defaultMsg = if (allowLowerKm) "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." else "Data servis berhasil diperbarui. Catatan/keluhan driver otomatis terhapus."
+                    val defaultMsg = "Data servis unit $armadaId berhasil disimpan. Target servis berikutnya: ${CommonUtils.formatKm(nextService)} KM (+10.000 KM)."
                     SubmitServiceResult.Success(response.message ?: defaultMsg)
                 } else {
                     SubmitServiceResult.Error(response.message ?: "Gagal memperbarui data servis.")
@@ -1263,24 +1269,20 @@ class FleetRepository(
             // Local Mode
             val localArmada = db.armadaDao().getArmadaById(armadaId)
             if (localArmada != null) {
-                if (!allowLowerKm && kmServis < localArmada.kmSaatIni) {
-                    return SubmitServiceResult.Error("KM lebih rendah dari KM saat ini. Aktifkan Mode Koreksi Odometer hanya jika ini adalah koreksi data yang sah.")
-                }
-                if (allowLowerKm && (correctionReason.isNullOrBlank() || correctionReason.trim().length < 10)) {
-                    return SubmitServiceResult.Error("Alasan koreksi odometer wajib diisi minimal 10 karakter!")
-                }
-                val interval = localArmada.intervalService
-                val nextService = kmServis + interval
+                val currentActualKm = if (localArmada.kmSaatIni > 0) maxOf(localArmada.kmSaatIni, kmServis) else kmServis
+                val sisaKm = nextService - currentActualKm
+                val statusStr = if (sisaKm < 0) "🚨 HARUS SERVICE" else if (sisaKm < 1000) "⚠️ SERVICE <1000 KM" else "🟢 AMAN"
                 val updated = localArmada.copy(
                     kmServiceTerakhir = kmServis,
-                    kmSaatIni = kmServis,
+                    kmSaatIni = currentActualKm,
+                    intervalService = interval,
                     kmServiceBerikutnya = nextService,
-                    sisaKm = interval,
-                    status = "AMAN",
+                    sisaKm = sisaKm,
+                    status = statusStr,
                     catattan = "" // Otomatis terhapus setelah service berkala
                 )
                 db.armadaDao().updateArmada(updated)
-                val msg = if (allowLowerKm) "Koreksi odometer berhasil dicatat dan disimpan ke riwayat audit." else "Data servis ${armadaId} berhasil diperbarui secara lokal. Status armada kembali AMAN!"
+                val msg = "Data servis $armadaId berhasil diperbarui secara lokal. Target servis berikutnya: ${CommonUtils.formatKm(nextService)} KM (+10.000 KM)."
                 return SubmitServiceResult.Success(msg)
             } else {
                 return SubmitServiceResult.Error("Armada tidak ditemukan.")
