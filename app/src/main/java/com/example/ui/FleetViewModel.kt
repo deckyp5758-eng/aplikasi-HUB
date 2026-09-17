@@ -10,6 +10,7 @@ import com.example.utils.ApkUpdateManager
 import com.example.utils.ImageCompressor
 import com.example.utils.InputSanitizer
 import com.example.utils.NotificationHelper
+import com.example.utils.OnDeviceOcrScanner
 import com.example.utils.UpdateUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -471,17 +472,32 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             _ocrLoading.value = true
             _ocrSuccessMessage.value = null
             _submitError.value = null
-            
+
+            // Prioritize ultra-fast on-device ML Kit OCR (100% Free, Offline, No API Key needed)
+            val onDeviceResult = OnDeviceOcrScanner.scanOdometerFromBitmap(bitmap)
+            if (onDeviceResult.isSuccess) {
+                val detectedKm = onDeviceResult.getOrNull()
+                if (detectedKm != null && detectedKm > 0) {
+                    _kmInput.value = detectedKm.toString()
+                    _ocrSuccessMessage.value = "Odometer berhasil terdeteksi (${detectedKm} KM)! Silakan periksa kembali sebelum mengirim."
+                    _ocrLoading.value = false
+                    return@launch
+                }
+            }
+
+            // Fallback: If on-device fails or yields inconclusive result, attempt backend/fallback OCR
             val bytes = ImageCompressor.compressBitmapToWebP(bitmap, maxDimension = 1280, quality = 80)
-            
             when (val result = repository.performOcr(bytes)) {
                 is OcrResult.Success -> {
                     _kmInput.value = result.km.toString()
-                    _ocrSuccessMessage.value = "Odometer berhasil dipindai! Silakan periksa kembali angkanya sebelum mengirim."
+                    _ocrSuccessMessage.value = "Odometer berhasil dipindai (${result.km} KM)! Silakan periksa kembali sebelum mengirim."
                 }
                 is OcrResult.Error -> {
-                    android.util.Log.e("FleetViewModel", "OCR Error: ${result.message}")
-                    _submitError.value = "Gagal memindai odometer: ${result.message}"
+                    val fallbackError = onDeviceResult.exceptionOrNull()?.message 
+                        ?: result.message 
+                        ?: "Angka odometer tidak terbaca jelas. Pastikan foto fokus dan angka speedometer terlihat jelas."
+                    android.util.Log.e("FleetViewModel", "OCR Error: $fallbackError")
+                    _submitError.value = "Gagal memindai odometer: $fallbackError"
                 }
             }
             _ocrLoading.value = false

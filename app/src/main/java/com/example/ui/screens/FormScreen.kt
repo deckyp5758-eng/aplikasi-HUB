@@ -10,7 +10,9 @@ import android.app.DownloadManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.Manifest
+import java.io.File
 import java.io.ByteArrayOutputStream
+import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -82,9 +84,6 @@ fun FormScreen(viewModel: FleetViewModel) {
     val error by viewModel.submitError.collectAsStateWithLifecycle()
     val ocrLoading by viewModel.ocrLoading.collectAsStateWithLifecycle()
     val ocrSuccessMessage by viewModel.ocrSuccessMessage.collectAsStateWithLifecycle()
-    val allLogs by viewModel.logs.collectAsStateWithLifecycle()
-    var formFullScreenImageUrl by remember { mutableStateOf<String?>(null) }
-    var formShowAllLogs by remember { mutableStateOf(false) }
 
     LaunchedEffect(ocrSuccessMessage) {
         ocrSuccessMessage?.let { msg ->
@@ -94,13 +93,37 @@ fun FormScreen(viewModel: FleetViewModel) {
     }
 
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var tempCameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     // Camera and gallery launchers
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap: Bitmap? ->
-        if (bitmap != null) {
-            viewModel.setPhoto(bitmap)
+    val cameraFullLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { isSuccess ->
+        if (isSuccess && tempCameraPhotoUri != null) {
+            try {
+                val bitmap = ImageCompressor.decodeSampledBitmapFromUri(context, tempCameraPhotoUri!!, maxDimension = 1280)
+                if (bitmap != null) {
+                    viewModel.setPhoto(bitmap)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun launchFullQualityCamera() {
+        try {
+            val photoFile = File(context.cacheDir, "ODO_CAPTURE_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                photoFile
+            )
+            tempCameraPhotoUri = uri
+            cameraFullLauncher.launch(uri)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(context, "Gagal membuka kamera: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -108,16 +131,12 @@ fun FormScreen(viewModel: FleetViewModel) {
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            try {
-                cameraLauncher.launch(null)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            launchFullQualityCamera()
         } else {
-            android.widget.Toast.makeText(
+            Toast.makeText(
                 context,
                 "Izin kamera diperlukan untuk mengambil foto.",
-                android.widget.Toast.LENGTH_SHORT
+                Toast.LENGTH_SHORT
             ).show()
         }
     }
@@ -343,18 +362,14 @@ fun FormScreen(viewModel: FleetViewModel) {
                         ) {
                             OutlinedButton(
                                 onClick = {
-                                    val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    val hasPermission = ContextCompat.checkSelfPermission(
                                         context,
-                                        android.Manifest.permission.CAMERA
-                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        Manifest.permission.CAMERA
+                                    ) == PackageManager.PERMISSION_GRANTED
                                     if (hasPermission) {
-                                        try {
-                                            cameraLauncher.launch(null)
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
-                                        }
+                                        launchFullQualityCamera()
                                     } else {
-                                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                                     }
                                 },
                                 modifier = Modifier
@@ -384,36 +399,98 @@ fun FormScreen(viewModel: FleetViewModel) {
 
                         // Photo Preview Block
                         selectedPhoto?.let { bitmap ->
-                            Box(
+                            Column(
                                 modifier = Modifier
                                     .padding(top = 12.dp)
-                                    .fillMaxWidth()
-                                    .height(180.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = "Odometer Preview",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
                                 Box(
                                     modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(8.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-                                        .clickable { viewModel.setPhoto(null) }
+                                        .fillMaxWidth()
+                                        .height(190.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Hapus Foto",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier
-                                            .padding(6.dp)
-                                            .size(20.dp)
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = "Odometer Preview",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
                                     )
+                                    // Delete Photo Chip
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(8.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                                            .clickable { viewModel.setPhoto(null) }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Hapus Foto",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier
+                                                .padding(6.dp)
+                                                .size(20.dp)
+                                        )
+                                    }
+
+                                    // OCR Status Chip Overlay (Bottom)
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(8.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (ocrLoading) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            if (ocrLoading) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(14.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    "AI On-Device Memindai...",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                            } else {
+                                                Icon(
+                                                    Icons.Default.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Text(
+                                                    "AI Scanner Offline Siap",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Quick Actions under Photo
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(
+                                        onClick = { viewModel.setPhoto(bitmap) },
+                                        enabled = !ocrLoading
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Pindai Ulang", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Pindai Ulang Odometer", style = MaterialTheme.typography.labelMedium)
+                                    }
                                 }
                             }
                         }
@@ -773,336 +850,6 @@ fun FormScreen(viewModel: FleetViewModel) {
                 }
             }
         }
-
-        // Section: Riwayat 7 Hari Terakhir
-        val relevantLogs = if (selectedArmadaId.isNotEmpty()) {
-            allLogs.filter { it.armadaId.trim().uppercase() == selectedArmadaId.trim().uppercase() }
-        } else {
-            allLogs
-        }
-
-        if (relevantLogs.isNotEmpty()) {
-            val displayedFormLogs = if (formShowAllLogs) relevantLogs else relevantLogs.take(7)
-            val formatKm = { num: Int ->
-                String.format("%,d", num).replace(',', '.')
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.DateRange,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = if (selectedArmadaId.isNotEmpty()) "Riwayat 7 Hari ($selectedArmadaId)" else "Riwayat 7 Hari Terakhir",
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                                if (relevantLogs.size > 7 && !formShowAllLogs) {
-                                    Text(
-                                        text = "Menampilkan 7 hari terakhir dari ${relevantLogs.size} data",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            if (relevantLogs.size > 7) {
-                                TextButton(
-                                    onClick = { formShowAllLogs = !formShowAllLogs },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = if (formShowAllLogs) "7 Hari" else "Lihat Semua",
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                                    )
-                                }
-                            }
-                        }
-
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            displayedFormLogs.forEach { log ->
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column {
-                                                Text(
-                                                    text = "${log.armadaId} • ${log.tanggal}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = "Driver: ${log.namaDriver}",
-                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = RoundedCornerShape(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = "${formatKm(log.kmTerdeteksi)} KM",
-                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                        }
-
-                                        if (log.catatan.isNotEmpty()) {
-                                            Text(
-                                                text = "Catatan: ${log.catatan}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        val hasOdoPhoto = log.linkFoto.isNotEmpty() && log.linkFoto.startsWith("http")
-                                        val hasNotaBbm = log.notaBbmUrl.isNotEmpty() && log.notaBbmUrl.startsWith("http")
-
-                                        if (hasOdoPhoto || hasNotaBbm) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                // Kolom Kiri: Foto Odometer
-                                                if (hasOdoPhoto) {
-                                                    val directOdoUrl = getDirectDriveImageUrl(log.linkFoto)
-                                                    Card(
-                                                        modifier = Modifier
-                                                            .weight(1f)
-                                                            .height(120.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .clickable { formFullScreenImageUrl = directOdoUrl },
-                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-                                                        shape = RoundedCornerShape(8.dp)
-                                                    ) {
-                                                        Box(modifier = Modifier.fillMaxSize()) {
-                                                            AsyncImage(
-                                                                model = directOdoUrl,
-                                                                contentDescription = "Foto Odometer",
-                                                                modifier = Modifier.fillMaxSize(),
-                                                                contentScale = ContentScale.Crop
-                                                            )
-                                                            Surface(
-                                                                color = Color.Black.copy(alpha = 0.65f),
-                                                                shape = RoundedCornerShape(bottomEnd = 6.dp),
-                                                                modifier = Modifier.align(Alignment.TopStart)
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                ) {
-                                                                    Icon(
-                                                                        Icons.Default.Speed,
-                                                                        contentDescription = null,
-                                                                        tint = Color.White,
-                                                                        modifier = Modifier.size(11.dp)
-                                                                    )
-                                                                    Text(
-                                                                        "Odometer",
-                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
-                                                                        color = Color.White
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                } else {
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .weight(1f)
-                                                            .height(120.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                                        shape = RoundedCornerShape(8.dp),
-                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-                                                    ) {
-                                                        Column(
-                                                            modifier = Modifier.fillMaxSize(),
-                                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                                            verticalArrangement = Arrangement.Center
-                                                        ) {
-                                                            Icon(
-                                                                Icons.Default.Speed,
-                                                                contentDescription = null,
-                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                                                modifier = Modifier.size(22.dp)
-                                                            )
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            Text(
-                                                                "Tanpa Foto Odo",
-                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-
-                                                // Kolom Kanan: Foto / PDF Nota BBM
-                                                if (hasNotaBbm) {
-                                                    val directNotaUrl = getDirectDriveImageUrl(log.notaBbmUrl)
-                                                    val isPdf = log.notaBbmUrl.lowercase().contains(".pdf") || log.notaBbmUrl.lowercase().contains("application%2fpdf")
-                                                    Card(
-                                                        modifier = Modifier
-                                                            .weight(1f)
-                                                            .height(120.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .clickable {
-                                                                if (isPdf) {
-                                                                    try {
-                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(log.notaBbmUrl))
-                                                                        context.startActivity(intent)
-                                                                    } catch (e: Exception) {
-                                                                        e.printStackTrace()
-                                                                    }
-                                                                } else {
-                                                                    formFullScreenImageUrl = directNotaUrl
-                                                                }
-                                                            },
-                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-                                                        shape = RoundedCornerShape(8.dp)
-                                                    ) {
-                                                        Box(modifier = Modifier.fillMaxSize()) {
-                                                            if (isPdf) {
-                                                                Column(
-                                                                    modifier = Modifier
-                                                                        .fillMaxSize()
-                                                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
-                                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                                    verticalArrangement = Arrangement.Center
-                                                                ) {
-                                                                    Icon(
-                                                                        Icons.Default.PictureAsPdf,
-                                                                        contentDescription = "PDF Nota",
-                                                                        tint = MaterialTheme.colorScheme.error,
-                                                                        modifier = Modifier.size(28.dp)
-                                                                    )
-                                                                    Spacer(modifier = Modifier.height(4.dp))
-                                                                    Text(
-                                                                        "Dokumen PDF",
-                                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                                                                        color = MaterialTheme.colorScheme.error
-                                                                    )
-                                                                    Text(
-                                                                        "Ketuk untuk buka",
-                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                                    )
-                                                                }
-                                                            } else {
-                                                                AsyncImage(
-                                                                    model = directNotaUrl,
-                                                                    contentDescription = "Nota BBM",
-                                                                    modifier = Modifier.fillMaxSize(),
-                                                                    contentScale = ContentScale.Crop
-                                                                )
-                                                            }
-                                                            Surface(
-                                                                color = Color(0xFF1E88E5).copy(alpha = 0.85f),
-                                                                shape = RoundedCornerShape(bottomEnd = 6.dp),
-                                                                modifier = Modifier.align(Alignment.TopStart)
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically,
-                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                ) {
-                                                                    Icon(
-                                                                        Icons.Default.LocalGasStation,
-                                                                        contentDescription = null,
-                                                                        tint = Color.White,
-                                                                        modifier = Modifier.size(11.dp)
-                                                                    )
-                                                                    Text(
-                                                                        "Nota BBM",
-                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
-                                                                        color = Color.White
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                } else {
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .weight(1f)
-                                                            .height(120.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                                                        shape = RoundedCornerShape(8.dp),
-                                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
-                                                    ) {
-                                                        Column(
-                                                            modifier = Modifier.fillMaxSize(),
-                                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                                            verticalArrangement = Arrangement.Center
-                                                        ) {
-                                                            Icon(
-                                                                Icons.Default.ReceiptLong,
-                                                                contentDescription = null,
-                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                                                                modifier = Modifier.size(22.dp)
-                                                            )
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            Text(
-                                                                "Tanpa Nota BBM",
-                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (formFullScreenImageUrl != null) {
-        FullScreenImageDialog(
-            imageUrl = formFullScreenImageUrl!!,
-            onDismiss = { formFullScreenImageUrl = null }
-        )
     }
 }
 

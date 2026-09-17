@@ -2595,6 +2595,75 @@ function handleAsistenAi(contents) {
   }
 }
 
+/**
+ * Backend Fallback OCR Odometer
+ * Mengekstrak angka KM Odometer dari gambar foto speedometer/odometer.
+ */
+function extractKmFromImage(base64Image) {
+  try {
+    if (!base64Image) {
+      return { success: false, message: "Gambar tidak ditemukan untuk diproses OCR." };
+    }
+
+    var cleanB64 = String(base64Image).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
+    var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") || "";
+
+    if (!apiKey) {
+      return { success: false, message: "OCR on-device telah aktif di aplikasi. Untuk OCR server, tambahkan GEMINI_API_KEY di Script Properties." };
+    }
+
+    var prompt = "Kamu adalah sistem OCR Odometer Truk. Tugasmu hanya membaca angka total kilometer (ODO / TOTAL / KM) dari foto speedometer ini. Kembalikan HANYA angka integer (contoh: 84520), tanpa spasi, huruf, satuan, atau tanda baca apapun. Jika tidak yakin atau tidak terbaca, kembalikan teks KOSONG.";
+    var models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+
+    for (var i = 0; i < models.length; i++) {
+      var model = models[i];
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+
+      var payload = {
+        "contents": [{
+          "parts": [
+            { "text": prompt },
+            {
+              "inlineData": {
+                "mimeType": "image/jpeg",
+                "data": cleanB64
+              }
+            }
+          ]
+        }],
+        "generationConfig": {
+          "temperature": 0.1,
+          "responseMimeType": "text/plain"
+        }
+      };
+
+      var options = {
+        "method": "post",
+        "contentType": "application/json",
+        "payload": JSON.stringify(payload),
+        "muteHttpExceptions": true
+      };
+
+      var response = UrlFetchApp.fetch(url, options);
+      if (response.getResponseCode() === 200) {
+        var resJson = JSON.parse(response.getContentText());
+        if (resJson.candidates && resJson.candidates.length > 0) {
+          var rawText = resJson.candidates[0].content.parts[0].text.trim();
+          var digits = rawText.replace(/[^0-9]/g, "");
+          var km = parseInt(digits, 10);
+          if (!isNaN(km) && km > 0 && km < 2000000) {
+            return { success: true, km: km, rawText: rawText };
+          }
+        }
+      }
+    }
+
+    return { success: false, message: "Angka odometer tidak terdeteksi jelas pada foto." };
+  } catch (err) {
+    return { success: false, message: "Error OCR server: " + err.toString() };
+  }
+}
+
 // ============================================
 // STRUCTURAL SETUP & SHEET FORMATTING (setupAllSheets)
 // ============================================
