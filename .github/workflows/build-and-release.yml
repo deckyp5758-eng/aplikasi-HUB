@@ -46,29 +46,65 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Restore Keystore for Consistent In-Place Upgrade Signing
+        env:
+          SECRET_H033_KEYSTORE: ${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}
+          SECRET_ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p ~/.android
-          KEYSTORE_B64='${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}'
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "Memulihkan debug.keystore dari secret H033_DEBUG_KEYSTORE_BASE64..."
-            printf '%s' "$KEYSTORE_B64" | base64 --decode > ~/.android/debug.keystore
-            cp ~/.android/debug.keystore ./debug.keystore
-            keytool -list -keystore ./debug.keystore -storepass android -alias androiddebugkey >/dev/null
-            echo "debug.keystore tervalidasi (alias androiddebugkey)."
-          elif [ -n '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' ]; then
-            echo "Memulihkan debug.keystore dari secret legacy ANDROID_KEYSTORE_BASE64..."
-            printf '%s' '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > ~/.android/debug.keystore
-            cp ~/.android/debug.keystore ./debug.keystore
-            keytool -list -keystore ./debug.keystore -storepass android -alias androiddebugkey >/dev/null
-            echo "debug.keystore legacy tervalidasi (alias androiddebugkey)."
-          elif [ -f debug.keystore.base64 ]; then
-            echo "Memulihkan keystore dari debug.keystore.base64..."
-            base64 -d debug.keystore.base64 > ~/.android/debug.keystore
-            cp ~/.android/debug.keystore ./debug.keystore
-            keytool -list -keystore ./debug.keystore -storepass android -alias androiddebugkey >/dev/null
+          KEYSTORE_RESTORED=false
+
+          # 1. Coba decode dari H033_DEBUG_KEYSTORE_BASE64 jika ada
+          if [ -n "${SECRET_H033_KEYSTORE:-}" ]; then
+            echo "Mencoba memulihkan keystore dari secret H033_DEBUG_KEYSTORE_BASE64..."
+            CLEAN_B64=$(printf '%s' "$SECRET_H033_KEYSTORE" | tr -d '\r\n\t ')
+            if printf '%s' "$CLEAN_B64" | base64 --decode > "$RUNNER_TEMP/candidate.keystore" 2>/dev/null && \
+               keytool -list -keystore "$RUNNER_TEMP/candidate.keystore" -storepass android -alias androiddebugkey >/dev/null 2>&1; then
+              cp "$RUNNER_TEMP/candidate.keystore" ~/.android/debug.keystore
+              cp "$RUNNER_TEMP/candidate.keystore" ./debug.keystore
+              KEYSTORE_RESTORED=true
+              echo "Keystore berhasil dipulihkan dari secret H033_DEBUG_KEYSTORE_BASE64 (alias: androiddebugkey)."
+            else
+              echo "::warning::Secret H033_DEBUG_KEYSTORE_BASE64 ada tetapi data base64 tidak valid / korup. Mencoba sumber berikutnya..."
+            fi
+          fi
+
+          # 2. Coba decode dari ANDROID_KEYSTORE_BASE64 jika sumber 1 belum berhasil
+          if [ "$KEYSTORE_RESTORED" = "false" ] && [ -n "${SECRET_ANDROID_KEYSTORE:-}" ]; then
+            echo "Mencoba memulihkan keystore dari secret ANDROID_KEYSTORE_BASE64..."
+            CLEAN_B64=$(printf '%s' "$SECRET_ANDROID_KEYSTORE" | tr -d '\r\n\t ')
+            if printf '%s' "$CLEAN_B64" | base64 --decode > "$RUNNER_TEMP/candidate.keystore" 2>/dev/null && \
+               keytool -list -keystore "$RUNNER_TEMP/candidate.keystore" -storepass android -alias androiddebugkey >/dev/null 2>&1; then
+              cp "$RUNNER_TEMP/candidate.keystore" ~/.android/debug.keystore
+              cp "$RUNNER_TEMP/candidate.keystore" ./debug.keystore
+              KEYSTORE_RESTORED=true
+              echo "Keystore berhasil dipulihkan dari secret ANDROID_KEYSTORE_BASE64 (alias: androiddebugkey)."
+            else
+              echo "::warning::Secret ANDROID_KEYSTORE_BASE64 ada tetapi data base64 tidak valid / korup. Mencoba file repository..."
+            fi
+          fi
+
+          # 3. Coba dari file lokal debug.keystore.base64 di root repo jika secret belum berhasil
+          if [ "$KEYSTORE_RESTORED" = "false" ] && [ -s "debug.keystore.base64" ]; then
+            echo "Memulihkan keystore dari repository file debug.keystore.base64..."
+            CLEAN_B64=$(tr -d '\r\n\t ' < debug.keystore.base64)
+            if printf '%s' "$CLEAN_B64" | base64 --decode > "$RUNNER_TEMP/candidate.keystore" 2>/dev/null && \
+               keytool -list -keystore "$RUNNER_TEMP/candidate.keystore" -storepass android -alias androiddebugkey >/dev/null 2>&1; then
+              cp "$RUNNER_TEMP/candidate.keystore" ~/.android/debug.keystore
+              cp "$RUNNER_TEMP/candidate.keystore" ./debug.keystore
+              KEYSTORE_RESTORED=true
+              echo "Keystore berhasil dipulihkan dari debug.keystore.base64 (alias: androiddebugkey)."
+            fi
+          fi
+
+          # 4. Validasi final
+          if [ "$KEYSTORE_RESTORED" = "true" ] && [ -s ~/.android/debug.keystore ]; then
+            CERT_SHA256=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep -i "SHA256:" | head -n 1 | awk '{print $2}')
+            echo "Signing Keystore Fingerprint (SHA-256): $CERT_SHA256"
+            echo "Keystore verifikasi: SUKSES (Konsistensi tanda tangan APK dijamin)."
           else
-            echo "::error::H033_DEBUG_KEYSTORE_BASE64 tidak ditemukan; build dihentikan agar APK tidak ditandatangani dengan key baru."
+            echo "::error::Gagal memulihkan valid debug.keystore dari Secret maupun file repository! Build dibatalkan untuk mencegah APK terdistribusi dengan tanda tangan key baru."
             exit 1
           fi
 
