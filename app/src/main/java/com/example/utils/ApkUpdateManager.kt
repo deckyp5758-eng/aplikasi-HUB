@@ -187,8 +187,20 @@ class ApkUpdateManager(
         downloadJob = updateScope.launch {
             val destinationDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                 ?: context.cacheDir
-            val destinationFile = File(destinationDir, "FleetOdoTracker_update.apk")
-            val tempFile = File(destinationDir, "FleetOdoTracker_update.apk.tmp")
+
+            // Bersihkan file-file update lama yang mungkin tersisa atau terkunci
+            try {
+                destinationDir.listFiles()?.forEach { f ->
+                    if (f.name.startsWith("FleetOdoTracker_update") || f.name.endsWith(".tmp")) {
+                        f.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("ApkUpdateManager", "Failed cleaning old cache: ${e.message}")
+            }
+
+            val destinationFile = File(destinationDir, "FleetOdoTracker_update_${System.currentTimeMillis()}.apk")
+            val tempFile = File(destinationDir, "FleetOdoTracker_download.tmp")
 
             try {
                 if (tempFile.exists()) tempFile.delete()
@@ -374,7 +386,9 @@ class ApkUpdateManager(
 
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
 
             context.startActivity(installIntent)

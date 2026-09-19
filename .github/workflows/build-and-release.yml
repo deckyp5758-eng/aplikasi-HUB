@@ -29,6 +29,17 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x ./gradlew
 
+      - name: Restore Keystore for Consistent Signing
+        run: |
+          mkdir -p ~/.android
+          if [ -f debug.keystore.base64 ]; then
+            echo "Memulihkan debug.keystore dari debug.keystore.base64 untuk konsistensi signature update..."
+            base64 -d debug.keystore.base64 > ~/.android/debug.keystore
+            cp ~/.android/debug.keystore ./debug.keystore
+          else
+            echo "debug.keystore.base64 tidak ditemukan, menggunakan keystore default."
+          fi
+
       - name: Prepare Secrets & Environment
         run: |
           if [ ! -f .env ]; then
