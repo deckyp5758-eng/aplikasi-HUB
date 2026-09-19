@@ -113,6 +113,30 @@ function getSheetByNameFromMap(ss, sheetMap, name) {
   return null;
 }
 
+/**
+ * Helper untuk normalisasi versi API (v1 sebagai default backward-compatible)
+ */
+function getApiVersion(contents, e) {
+  var v = (contents && contents.apiVersion) || (e && e.parameter && e.parameter.apiVersion) || "v1";
+  return String(v).trim().toLowerCase();
+}
+
+/**
+ * Health check endpoint stabil tanpa membocorkan secret / credential
+ */
+function handleHealthCheck(e, contents) {
+  return {
+    success: true,
+    service: "HUB KEDIRI Apps Script Backend",
+    backendVersion: "2.0.0",
+    apiVersions: ["v1", "v2"],
+    environment: "production",
+    defaultSpreadsheetId: DEFAULT_SPREADSHEET_ID,
+    timestamp: new Date().getTime(),
+    deployedAt: new Date().toISOString()
+  };
+}
+
 // ============================================
 // HANDLER UTAMA (doGet, doPost)
 // ============================================
@@ -125,7 +149,9 @@ function doGet(e) {
 
     Logger.log("doGet called. Action: " + action + ", Spreadsheet ID: " + (ss ? ss.getId() : "null"));
 
-    if (action === "getDrivers") {
+    if (action === "health" || action === "ping" || action === "status") {
+      return jsonResponse(handleHealthCheck(e, null));
+    } else if (action === "getDrivers") {
       return jsonResponse({ success: true, drivers: getDrivers(ss, sheetMap) });
     } else if (action === "getArmada" || action === "getKirPajak") {
       return jsonResponse({ success: true, armada: getArmada(ss, sheetMap) });
@@ -142,11 +168,11 @@ function doGet(e) {
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
-        latestVersionCode: 1,
-        latestVersionName: "1.0.0",
-        apkDownloadUrl: "",
+        latestVersionCode: 8,
+        latestVersionName: "1.5.0",
+        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.5.0/H033-v1.5.0-code8.apk",
         forceUpdate: false,
-        changelog: "Pembaruan sistem validasi login driver dan peningkatan stabilitas aplikasi."
+        changelog: "Pembaruan v1.5.0: Stabilitas sinkronisasi log KM, verifikasi in-app update, dan kompatibilitas sistem."
       });
     } else if (action === "setupAllSheets" || action === "setupSheets" || action === "setup_sheets") {
       return jsonResponse(setupAllSheets(ss));
@@ -207,7 +233,18 @@ function doPost(e) {
 
     Logger.log("doPost called. Action: " + action + ", Spreadsheet ID: " + (ss ? ss.getId() : "null"));
 
-    if (action === "getDrivers") {
+    if (action === "health" || action === "ping" || action === "status") {
+      return jsonResponse(handleHealthCheck(e, contents));
+    } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
+      return jsonResponse({
+        success: true,
+        latestVersionCode: 8,
+        latestVersionName: "1.5.0",
+        apkDownloadUrl: "https://github.com/deckyp5758-eng/aplikasi-HUB/releases/download/v1.5.0/H033-v1.5.0-code8.apk",
+        forceUpdate: false,
+        changelog: "Pembaruan v1.5.0: Stabilitas sinkronisasi log KM, verifikasi in-app update, dan kompatibilitas sistem."
+      });
+    } else if (action === "getDrivers") {
       return jsonResponse({ success: true, drivers: getDrivers(ss, sheetMap) });
     } else if (action === "getArmada" || action === "getKirPajak") {
       return jsonResponse({ success: true, armada: getArmada(ss, sheetMap) });

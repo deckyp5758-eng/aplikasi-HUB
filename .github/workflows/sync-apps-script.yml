@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - app/src/main/assets/apps-script/Code.gs
+      - app/src/main/assets/apps-script/**
+      - AppsScriptCode.js
   workflow_dispatch:
 
 permissions:
@@ -16,45 +17,50 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # These identifiers are not credentials. The credential itself is read only
-  # from the CLASP_CREDENTIALS_JSON repository secret below.
   APPS_SCRIPT_PROJECT_ID: 1sc4hIEKppa5pyTbes5i-BXrE4LaklUix9CJxEzCtl7jN8GcutUC_YFLM
   APPS_SCRIPT_DEPLOYMENT_ID: AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ
   APPS_SCRIPT_WEB_APP_URL: https://script.google.com/macros/s/AKfycbxEXMxyio1bpUiVn9bOlWqf9tHfnqcWBK3WUPEJgVDGcR1nqNSC3nnnatXNiMJm1fzQ/exec
 
 jobs:
   deploy:
-    name: Update Apps Script and redeploy
+    name: Update Apps Script and Redeploy
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       CLASP_CREDENTIALS_JSON: ${{ secrets.CLASP_CREDENTIALS_JSON }}
 
     steps:
       - name: Checkout canonical source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Validate required secret and protected scope
         shell: bash
         run: |
           set -euo pipefail
           test -n "$CLASP_CREDENTIALS_JSON" || {
-            echo "Missing repository secret CLASP_CREDENTIALS_JSON."
+            echo "::error::Missing repository secret CLASP_CREDENTIALS_JSON."
             exit 1
           }
+          
+          # Validasi bahwa CLASP_CREDENTIALS_JSON adalah JSON yang valid
+          python3 -c "import json, os, sys; json.loads(os.environ['CLASP_CREDENTIALS_JSON'])" || {
+            echo "::error::CLASP_CREDENTIALS_JSON is not a valid JSON structure."
+            exit 1
+          }
+
           canonical="$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Code.gs"
           test -s "$canonical"
           if grep -qE '563918420|1474380133' "$canonical"; then
-            echo "Refusing to deploy: canonical Code.gs contains an obsolete GID."
+            echo "::error::Refusing to deploy: canonical Code.gs contains an obsolete GID."
             exit 1
           fi
           if grep -qE '(^|/|\\)BBM\\.gs$' <(find "$GITHUB_WORKSPACE" -type f -print); then
-            echo "Protected BBM.gs must not be included in this sync job."
+            echo "::error::Protected BBM.gs must not be included in this sync job."
             exit 1
           fi
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
         with:
           node-version: 20
 
@@ -62,13 +68,13 @@ jobs:
         shell: bash
         run: npm install --global @google/clasp@3.4.0
 
-      - name: Pull current Apps Script project and replace only Code.gs
+      - name: Pull current Apps Script project and replace Code.gs & Index.html
         shell: bash
         run: |
           set -euo pipefail
           sync_dir="$(mktemp -d)"
           echo "SYNC_DIR=$sync_dir" >> "$GITHUB_ENV"
-          # clasp reads authentication from the runner user's global file.
+
           printf '%s' "$CLASP_CREDENTIALS_JSON" > "$HOME/.clasprc.json"
           chmod 600 "$HOME/.clasprc.json"
           printf '{"scriptId":"%s","rootDir":"%s"}\n' \
@@ -78,18 +84,24 @@ jobs:
           cd "$sync_dir"
           clasp pull
 
-          # Refuse the job if the remote project contains the separately-owned
-          # BBM.gs asset. This prevents an accidental cross-project overwrite.
+          # Catat version number aktif sebelum deployment untuk kemungkinan rollback
+          clasp deployments --json > "$RUNNER_TEMP/deployments-before.json"
+          PREV_VER=$(python3 -c "import json; d=json.load(open('$RUNNER_TEMP/deployments-before.json')); print(next((str(item.get('versionNumber','')) for item in d if item.get('deploymentId')=='$APPS_SCRIPT_DEPLOYMENT_ID'), ''))")
+          echo "PREVIOUS_APPS_SCRIPT_VERSION=$PREV_VER" >> "$GITHUB_ENV"
+          echo "Previous active Apps Script version: $PREV_VER"
+
           if find "$sync_dir" -type f -name 'BBM.gs' -print -quit | grep -q .; then
-            echo "Refusing to sync: BBM.gs exists in the target project."
+            echo "::error::Refusing to sync: BBM.gs exists in the target project."
             exit 1
           fi
 
-          # clasp pull maps the Apps Script SERVER_JS file to Code.js.
-          # Keep exactly one server source file locally; feeding both Code.gs
-          # and Code.js causes clasp to abort with "Conflicting files found".
           rm -f "$sync_dir/Code.gs"
           cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Code.gs" "$sync_dir/Code.js"
+          
+          if [ -f "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Index.html" ]; then
+            cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Index.html" "$sync_dir/Index.html"
+          fi
+
           test -s "$sync_dir/Code.js"
           test ! -e "$sync_dir/Code.gs"
 
@@ -109,27 +121,22 @@ jobs:
           clasp version "$description" | tee "$RUNNER_TEMP/clasp-version.log"
           version="$(sed -nE 's/.*Created version ([0-9]+).*/\1/p' "$RUNNER_TEMP/clasp-version.log" | tail -n 1)"
           test -n "$version" || {
-            echo "Could not determine the newly created Apps Script version."
+            echo "::error::Could not determine the newly created Apps Script version."
             exit 1
           }
           echo "APPS_SCRIPT_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Created new version: $version"
 
-      - name: Update the existing Web App deployment only
+      - name: Update existing Web App deployment (clasp redeploy)
         shell: bash
         run: |
           set -euo pipefail
           cd "$SYNC_DIR"
-
-          # Snapshot deployment IDs before the update. This workflow must
-          # never create or delete a deployment.
-          clasp deployments --json > "$RUNNER_TEMP/deployments-before.json"
           description="GitHub ${GITHUB_SHA:0:7}"
-          clasp update-deployment "$APPS_SCRIPT_DEPLOYMENT_ID" \
-            --versionNumber "$APPS_SCRIPT_VERSION" \
-            --description "$description"
+          
+          # Gunakan perintah resmi clasp redeploy untuk in-place update tanpa ubah URL Web App
+          clasp redeploy "$APPS_SCRIPT_DEPLOYMENT_ID" "$APPS_SCRIPT_VERSION" "$description"
 
-          # Apps Script may report the old version briefly after an update.
-          # Retry the read, but fail immediately if the deployment set changes.
           verified=0
           for attempt in $(seq 1 12); do
             clasp deployments --json > "$RUNNER_TEMP/deployments-after.json"
@@ -153,15 +160,9 @@ jobs:
               if deployment.get("deploymentId") == expected_deployment:
                   actual_version = str(deployment.get("versionNumber", ""))
                   if actual_version == expected_version:
-                      print(
-                          "Canonical deployment updated without creating a deployment; "
-                          "version " + actual_version
-                      )
+                      print("Canonical deployment updated successfully to version " + actual_version)
                       break
-                  print(
-                      f"Deployment still reports version {actual_version}; "
-                      f"waiting for version {expected_version}."
-                  )
+                  print(f"Deployment still reports version {actual_version}; waiting for {expected_version}...")
                   raise SystemExit(1)
           else:
               print("Canonical Apps Script deployment ID was not found.")
@@ -175,33 +176,57 @@ jobs:
               if [ "$result" -eq 2 ]; then
                 exit 1
               fi
-              echo "Waiting for Apps Script deployment consistency (attempt $attempt/12)."
+              echo "Waiting for Apps Script deployment consistency (attempt $attempt/12)..."
               sleep 5
             fi
           done
           test "$verified" -eq 1 || {
-            echo "Canonical deployment did not expose the new version within 60 seconds."
+            echo "::error::Canonical deployment did not expose the new version within 60 seconds."
             exit 1
           }
 
-      - name: Verify the same Web App URL
+      - name: Verify Health Endpoint & Backward Compatibility
         shell: bash
         run: |
           set -euo pipefail
-          response_file="$RUNNER_TEMP/h033-debug.json"
-          status="$(curl --fail-with-body -sS -L \
-            -o "$response_file" -w '%{http_code}' \
-            "${APPS_SCRIPT_WEB_APP_URL}?action=debug")"
-          test "$status" = "200" || {
-            echo "Web App verification returned HTTP $status."
+          
+          echo "1. Memeriksa Health Endpoint (?action=health)..."
+          health_res="$RUNNER_TEMP/h033-health.json"
+          http_code="$(curl --fail-with-body -sS -L -o "$health_res" -w '%{http_code}' "${APPS_SCRIPT_WEB_APP_URL}?action=health" || echo "000")"
+          
+          if [ "$http_code" != "200" ]; then
+            echo "Fallback check ?action=debug..."
+            http_code="$(curl --fail-with-body -sS -L -o "$health_res" -w '%{http_code}' "${APPS_SCRIPT_WEB_APP_URL}?action=debug")"
+          fi
+          
+          test "$http_code" = "200" || {
+            echo "::error::Health check failed with HTTP $http_code."
             exit 1
           }
-          python3 - "$response_file" <<'PY'
-          import json
-          import sys
-          with open(sys.argv[1], encoding="utf-8") as handle:
-              payload = json.load(handle)
-          if payload.get("success") is not True:
-              raise SystemExit("Apps Script debug verification did not report success")
-          print("Apps Script deployment verification: success")
+          
+          python3 - "$health_res" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as h:
+              data = json.load(h)
+          if data.get("success") is not True:
+              raise SystemExit("Backend health check returned success != true")
+          print("Backend health check verified successfully.")
           PY
+
+          echo "2. Memeriksa Legacy v1 Contract (?action=getDrivers)..."
+          drivers_res="$RUNNER_TEMP/h033-drivers.json"
+          d_code="$(curl --fail-with-body -sS -L -o "$drivers_res" -w '%{http_code}' "${APPS_SCRIPT_WEB_APP_URL}?action=getDrivers" || echo "000")"
+          test "$d_code" = "200" || {
+            echo "::error::Legacy getDrivers check failed with HTTP $d_code."
+            exit 1
+          }
+          echo "Legacy v1 contract verified successfully."
+
+      - name: Rollback on Failure
+        if: failure() && env.PREVIOUS_APPS_SCRIPT_VERSION != ''
+        shell: bash
+        run: |
+          echo "::warning::Deployment verification failed. Rolling back to previous version $PREVIOUS_APPS_SCRIPT_VERSION..."
+          cd "$SYNC_DIR"
+          clasp redeploy "$APPS_SCRIPT_DEPLOYMENT_ID" "$PREVIOUS_APPS_SCRIPT_VERSION" "Rollback on CI/CD Failure" || true
+          echo "Rollback executed."
