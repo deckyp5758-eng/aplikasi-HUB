@@ -127,15 +127,18 @@ jobs:
           echo "APPS_SCRIPT_VERSION=$version" >> "$GITHUB_ENV"
           echo "Created new version: $version"
 
-      - name: Update existing Web App deployment (clasp redeploy)
+      - name: Update existing Web App deployment
         shell: bash
         run: |
           set -euo pipefail
           cd "$SYNC_DIR"
           description="GitHub ${GITHUB_SHA:0:7}"
-          
-          # Gunakan perintah resmi clasp redeploy untuk in-place update tanpa ubah URL Web App
-          clasp redeploy "$APPS_SCRIPT_DEPLOYMENT_ID" "$APPS_SCRIPT_VERSION" "$description"
+
+          # clasp 3.4.0 menerima hanya satu argumen posisi (deployment ID).
+          # Version dan description harus dikirim sebagai opsi bernama.
+          clasp update-deployment "$APPS_SCRIPT_DEPLOYMENT_ID" \
+            --versionNumber "$APPS_SCRIPT_VERSION" \
+            --description "$description"
 
           verified=0
           for attempt in $(seq 1 12); do
@@ -228,5 +231,7 @@ jobs:
         run: |
           echo "::warning::Deployment verification failed. Rolling back to previous version $PREVIOUS_APPS_SCRIPT_VERSION..."
           cd "$SYNC_DIR"
-          clasp redeploy "$APPS_SCRIPT_DEPLOYMENT_ID" "$PREVIOUS_APPS_SCRIPT_VERSION" "Rollback on CI/CD Failure" || true
+          clasp update-deployment "$APPS_SCRIPT_DEPLOYMENT_ID" \
+            --versionNumber "$PREVIOUS_APPS_SCRIPT_VERSION" \
+            --description "Rollback on CI/CD Failure" || true
           echo "Rollback executed."

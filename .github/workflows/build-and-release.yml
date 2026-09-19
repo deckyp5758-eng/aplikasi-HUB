@@ -47,17 +47,29 @@ jobs:
 
       - name: Restore Keystore for Consistent In-Place Upgrade Signing
         run: |
+          set -euo pipefail
           mkdir -p ~/.android
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "Memulihkan keystore dari GitHub Secrets ANDROID_KEYSTORE_BASE64..."
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+          KEYSTORE_B64='${{ secrets.H033_DEBUG_KEYSTORE_BASE64 }}'
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "Memulihkan debug.keystore dari secret H033_DEBUG_KEYSTORE_BASE64..."
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > ~/.android/debug.keystore
             cp ~/.android/debug.keystore ./debug.keystore
+            keytool -list -keystore ./debug.keystore -storepass android -alias androiddebugkey >/dev/null
+            echo "debug.keystore tervalidasi (alias androiddebugkey)."
+          elif [ -n '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' ]; then
+            echo "Memulihkan debug.keystore dari secret legacy ANDROID_KEYSTORE_BASE64..."
+            printf '%s' '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > ~/.android/debug.keystore
+            cp ~/.android/debug.keystore ./debug.keystore
+            keytool -list -keystore ./debug.keystore -storepass android -alias androiddebugkey >/dev/null
+            echo "debug.keystore legacy tervalidasi (alias androiddebugkey)."
           elif [ -f debug.keystore.base64 ]; then
             echo "Memulihkan keystore dari debug.keystore.base64..."
             base64 -d debug.keystore.base64 > ~/.android/debug.keystore
             cp ~/.android/debug.keystore ./debug.keystore
+            keytool -list -keystore ./debug.keystore -storepass android -alias androiddebugkey >/dev/null
           else
-            echo "::warning::Keystore base64 tidak ditemukan, menggunakan keystore default runner."
+            echo "::error::H033_DEBUG_KEYSTORE_BASE64 tidak ditemukan; build dihentikan agar APK tidak ditandatangani dengan key baru."
+            exit 1
           fi
 
       - name: Prepare Secrets & Environment
