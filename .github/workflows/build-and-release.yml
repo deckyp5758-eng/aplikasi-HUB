@@ -114,6 +114,28 @@ jobs:
             cp .env.example .env || echo "GEMINI_API_KEY=MY_GEMINI_API_KEY" > .env
           fi
 
+      - name: Auto Increment Version Name & Code for Dynamic Update Delivery
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        shell: bash
+        run: |
+          echo "Menghitung otomatis versi baru untuk rilis GitHub..."
+          BASE_VCODE=8
+          BASE_VNAME="1.5.0"
+          
+          # Hitung versi baru berbasis github.run_number agar selalu meningkat secara otomatis
+          NEW_VCODE=$((BASE_VCODE + RUN_NUMBER))
+          NEW_VNAME="1.5.${RUN_NUMBER}"
+          
+          echo "Versi Baru di CI: v${NEW_VNAME} (Code: ${NEW_VCODE})"
+          
+          # Perbarui file build.gradle.kts secara aman sebelum kompilasi
+          sed -i "s/versionCode = ${BASE_VCODE}/versionCode = ${NEW_VCODE}/g" app/build.gradle.kts
+          sed -i "s/versionName = \"${BASE_VNAME}\"/versionName = \"${NEW_VNAME}\"/g" app/build.gradle.kts
+          
+          echo "Konfigurasi versi akhir pada app/build.gradle.kts:"
+          grep -E "versionCode|versionName" app/build.gradle.kts
+
       - name: Run Unit Tests
         run: |
           echo "Menjalankan JVM unit tests..."

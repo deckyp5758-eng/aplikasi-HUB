@@ -191,12 +191,20 @@ fun InAppUpdateDialog(
                             modifier = Modifier.size(56.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(
-                                    progress = { updateState.progressPercent / 100f },
-                                    modifier = Modifier.size(36.dp),
-                                    strokeWidth = 3.5.dp,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
+                                if (updateState.totalBytes > 0) {
+                                    CircularProgressIndicator(
+                                        progress = { updateState.progressPercent / 100f },
+                                        modifier = Modifier.size(36.dp),
+                                        strokeWidth = 3.5.dp,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                } else {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(36.dp),
+                                        strokeWidth = 3.5.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
 
@@ -220,8 +228,14 @@ fun InAppUpdateDialog(
                             "Menghitung..."
                         }
 
+                        val textProgress = if (updateState.totalBytes > 0) {
+                            "$percent%  ($downloadedStr / $totalStr)"
+                        } else {
+                            "$downloadedStr (Mengunduh...)"
+                        }
+
                         Text(
-                            text = "$percent%  ($downloadedStr / $totalStr)",
+                            text = textProgress,
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -230,12 +244,20 @@ fun InAppUpdateDialog(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        LinearProgressIndicator(
-                            progress = { updateState.progressPercent / 100f },
-                            modifier = Modifier.fillMaxWidth().height(8.dp),
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            drawStopIndicator = {}
-                        )
+                        if (updateState.totalBytes > 0) {
+                            LinearProgressIndicator(
+                                progress = { updateState.progressPercent / 100f },
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                drawStopIndicator = {}
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(12.dp))
 

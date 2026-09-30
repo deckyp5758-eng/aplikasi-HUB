@@ -262,9 +262,18 @@ class ApkUpdateManager(
                                 0
                             }
 
-                            // Throttle update agar UI Compose tetap responsif tanpa lag
-                            if (currentPercent != lastPercent && now - lastProgressUpdate >= 120) {
-                                lastPercent = currentPercent
+                            // Throttle update agar UI Compose tetap responsif tanpa lag.
+                            // Jika totalBytes <= 0, gunakan interval waktu (misal tiap 300ms) untuk memperbarui progress downloadedBytes di UI.
+                            val shouldUpdateUi = if (totalBytes > 0) {
+                                currentPercent != lastPercent && now - lastProgressUpdate >= 120
+                            } else {
+                                now - lastProgressUpdate >= 300
+                            }
+
+                            if (shouldUpdateUi) {
+                                if (totalBytes > 0) {
+                                    lastPercent = currentPercent
+                                }
                                 lastProgressUpdate = now
                                 _updateState.value = UpdateUiState.Downloading(
                                     progressPercent = currentPercent,

@@ -735,21 +735,6 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // AI Assistant State (Removed)
-    private val _aiChatHistory = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val aiChatHistory: StateFlow<List<ChatMessage>> = _aiChatHistory.asStateFlow()
-
-    private val _aiLoading = MutableStateFlow(false)
-    val aiLoading: StateFlow<Boolean> = _aiLoading.asStateFlow()
-
-    fun clearAiChatHistory() {
-        _aiChatHistory.value = emptyList()
-    }
-
-    fun sendAiChatMessage(messageText: String) {
-        // Chat AI feature disabled
-    }
-
     fun findMediaItemsForQuery(queryText: String): List<ChatMediaItem> {
         val qRaw = queryText.lowercase().trim()
         val qClean = qRaw.replace("-", "").replace(" ", "")

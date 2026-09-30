@@ -2236,13 +2236,14 @@ function extractKmFromImage(base64Data) {
     var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") 
                  || "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ";
 
-    if (!apiKey || apiKey === "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ") {
+    if (!apiKey) {
       return { 
         success: false, 
         message: "API Key Gemini belum dikonfigurasi di Script Properties SCRIPT_PROPERTIES. Silakan atur GEMINI_API_KEY." 
       };
     }
 
+    var prompt = "Kamu adalah sistem OCR Odometer Truk. Tugasmu hanya membaca angka total kilometer (ODO / TOTAL / KM) dari foto speedometer ini. Kembalikan HANYA angka integer (contoh: 84520), tanpa spasi, huruf, satuan, atau tanda baca apapun. Jika tidak yakin atau tidak terbaca, kembalikan teks KOSONG.";
     var models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
     var lastError = "";
 
@@ -2254,7 +2255,7 @@ function extractKmFromImage(base64Data) {
         "contents": [
           {
             "parts": [
-              { "text": "Tolong baca angka odometer (kilometer saat ini) dari foto ini. Hanya kembalikan angkanya saja dalam format integer murni tanpa teks/tambahan/simbol apa pun (contoh: 124530). Jika angka tidak terbaca, kembalikan 'null'." },
+              { "text": prompt },
               {
                 "inlineData": {
                   "mimeType": "image/jpeg",
@@ -2265,6 +2266,7 @@ function extractKmFromImage(base64Data) {
           }
         ],
         "generationConfig": {
+          "temperature": 0.1,
           "responseMimeType": "text/plain"
         }
       };
@@ -2284,11 +2286,11 @@ function extractKmFromImage(base64Data) {
         if (responseCode === 200) {
           var result = JSON.parse(responseText);
           if (result.candidates && result.candidates.length > 0) {
-            var text = result.candidates[0].content.parts[0].text.trim();
-            var digits = text.replace(/\D/g, "");
+            var rawText = result.candidates[0].content.parts[0].text.trim();
+            var digits = rawText.replace(/[^0-9]/g, "");
             var km = parseInt(digits, 10);
-            if (!isNaN(km)) {
-              return { success: true, km: km };
+            if (!isNaN(km) && km > 0 && km < 2000000) {
+              return { success: true, km: km, rawText: rawText };
             }
           }
         } else {
@@ -2299,9 +2301,9 @@ function extractKmFromImage(base64Data) {
       }
     }
 
-    return { success: false, message: "Gagal membaca odometer: " + lastError };
+    return { success: false, message: "Angka odometer tidak terdeteksi jelas pada foto. " + lastError };
   } catch (err) {
-    return { success: false, message: "Error OCR: " + err.toString() };
+    return { success: false, message: "Error OCR server: " + err.toString() };
   }
 }
 
@@ -2629,75 +2631,6 @@ function handleAsistenAi(contents) {
     };
   } catch (err) {
     return { success: false, message: "Gagal memproses Asisten AI: " + err.toString() };
-  }
-}
-
-/**
- * Backend Fallback OCR Odometer
- * Mengekstrak angka KM Odometer dari gambar foto speedometer/odometer.
- */
-function extractKmFromImage(base64Image) {
-  try {
-    if (!base64Image) {
-      return { success: false, message: "Gambar tidak ditemukan untuk diproses OCR." };
-    }
-
-    var cleanB64 = String(base64Image).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
-    var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") || "";
-
-    if (!apiKey) {
-      return { success: false, message: "OCR on-device telah aktif di aplikasi. Untuk OCR server, tambahkan GEMINI_API_KEY di Script Properties." };
-    }
-
-    var prompt = "Kamu adalah sistem OCR Odometer Truk. Tugasmu hanya membaca angka total kilometer (ODO / TOTAL / KM) dari foto speedometer ini. Kembalikan HANYA angka integer (contoh: 84520), tanpa spasi, huruf, satuan, atau tanda baca apapun. Jika tidak yakin atau tidak terbaca, kembalikan teks KOSONG.";
-    var models = ["gemini-2.0-flash", "gemini-1.5-flash"];
-
-    for (var i = 0; i < models.length; i++) {
-      var model = models[i];
-      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
-
-      var payload = {
-        "contents": [{
-          "parts": [
-            { "text": prompt },
-            {
-              "inlineData": {
-                "mimeType": "image/jpeg",
-                "data": cleanB64
-              }
-            }
-          ]
-        }],
-        "generationConfig": {
-          "temperature": 0.1,
-          "responseMimeType": "text/plain"
-        }
-      };
-
-      var options = {
-        "method": "post",
-        "contentType": "application/json",
-        "payload": JSON.stringify(payload),
-        "muteHttpExceptions": true
-      };
-
-      var response = UrlFetchApp.fetch(url, options);
-      if (response.getResponseCode() === 200) {
-        var resJson = JSON.parse(response.getContentText());
-        if (resJson.candidates && resJson.candidates.length > 0) {
-          var rawText = resJson.candidates[0].content.parts[0].text.trim();
-          var digits = rawText.replace(/[^0-9]/g, "");
-          var km = parseInt(digits, 10);
-          if (!isNaN(km) && km > 0 && km < 2000000) {
-            return { success: true, km: km, rawText: rawText };
-          }
-        }
-      }
-    }
-
-    return { success: false, message: "Angka odometer tidak terdeteksi jelas pada foto." };
-  } catch (err) {
-    return { success: false, message: "Error OCR server: " + err.toString() };
   }
 }
 
