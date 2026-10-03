@@ -384,7 +384,7 @@ class FleetAppComprehensiveTest {
         // --- ID 3: Unregistered ID (D99 / Random) ---
         val resUnregistered = repository.validateLogin("D99", "1234")
         assertTrue(resUnregistered is LoginResult.Error)
-        assertEquals("ID Driver atau Nama tidak terdaftar di sistem.", (resUnregistered as LoginResult.Error).message)
+        assertEquals("ID atau Nama tidak terdaftar di sistem.", (resUnregistered as LoginResult.Error).message)
     }
 
     @Test
