@@ -107,28 +107,13 @@ fun LoginScreen(viewModel: FleetViewModel) {
 
                 Text(
                     text = "HUB KEDIRI",
-                    style = MaterialTheme.typography.titleMedium.copy(
+                    style = MaterialTheme.typography.headlineMedium.copy(
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary,
                         letterSpacing = 2.sp
                     ),
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-                Text(
-                    text = "Fleet Odo Tracker",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        letterSpacing = 1.sp
-                    ),
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = "Pencatatan KM Harian Armada Driver",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
 
@@ -149,7 +134,7 @@ fun LoginScreen(viewModel: FleetViewModel) {
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(18.dp)
                     ) {
-                        // Header Log Masuk with Security Accent
+                        // Header Log In with Security Accent
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -170,12 +155,12 @@ fun LoginScreen(viewModel: FleetViewModel) {
                             }
                             Column {
                                 Text(
-                                    text = "Log Masuk Driver",
+                                    text = "Log In",
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Akses terproteksi pengemudi armada",
+                                    text = "Masuk menggunakan ID & PIN",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -187,16 +172,16 @@ fun LoginScreen(viewModel: FleetViewModel) {
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
                         )
 
-                        // Input ID Driver (Kerahasiaan Terjaga - Tidak Menampilkan Daftar ID)
+                        // Input ID (Staff, Driver, Kenek, LP)
                         OutlinedTextField(
                             value = selectedDriver,
                             onValueChange = { viewModel.setSelectedDriver(it) },
-                            label = { Text("ID Driver") },
-                            placeholder = { Text("Masukkan ID Driver Anda") },
+                            label = { Text("ID") },
+                            placeholder = { Text("Contoh: 094723, E01762, atau NAMA") },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Outlined.Person,
-                                    contentDescription = "ID Driver Icon"
+                                    contentDescription = "ID Icon"
                                 )
                             },
                             trailingIcon = {
@@ -204,7 +189,7 @@ fun LoginScreen(viewModel: FleetViewModel) {
                                     IconButton(onClick = { viewModel.setSelectedDriver("") }) {
                                         Icon(
                                             imageVector = Icons.Default.Clear,
-                                            contentDescription = "Hapus input ID Driver"
+                                            contentDescription = "Hapus input ID"
                                         )
                                     }
                                 }
@@ -338,7 +323,7 @@ fun LoginScreen(viewModel: FleetViewModel) {
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    "Log Masuk",
+                                    "Log In",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                             }
@@ -360,7 +345,7 @@ fun LoginScreen(viewModel: FleetViewModel) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "ID Driver & PIN bersifat rahasia",
+                                text = "ID & PIN bersifat rahasia",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                             )

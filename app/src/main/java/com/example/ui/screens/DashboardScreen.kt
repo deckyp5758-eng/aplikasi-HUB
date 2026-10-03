@@ -423,58 +423,44 @@ fun DashboardScreen(
             }
         }
 
-        // 1. Beautiful Hero Banner
+        // 1. Hero Banner Tim & Armada Operasional Hub Kediri
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp),
+                    .height(160.dp),
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(Color(0xFF0054A6), Color(0xFF1976D2))
-                            )
-                        )
-                        .drawBehind {
-                            // Draw elegant premium overlapping translucent circles/arcs for three-dimensional visual depth
-                            drawCircle(
-                                color = Color.White.copy(alpha = 0.05f),
-                                radius = this.size.height * 0.95f,
-                                center = androidx.compose.ui.geometry.Offset(this.size.width * 0.82f, this.size.height * 0.25f)
-                            )
-                            drawCircle(
-                                color = Color.White.copy(alpha = 0.08f),
-                                radius = this.size.height * 0.6f,
-                                center = androidx.compose.ui.geometry.Offset(this.size.width * 0.92f, this.size.height * 0.75f)
-                            )
-                        }
-                ) {
-                    // Right illustration: Truck with fallback to newly generated hero asset
+                Box(modifier = Modifier.fillMaxSize()) {
                     AsyncImage(
-                        model = R.drawable.fleet_dashboard_hero_1786962305848,
-                        contentDescription = null,
+                        model = R.drawable.img_fleet_banner,
+                        contentDescription = "Tim & Armada Hub Kediri",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .width(190.dp)
-                            .graphicsLayer(alpha = 0.38f),
-                        alignment = Alignment.CenterEnd
+                        modifier = Modifier.fillMaxSize()
                     )
 
-                    // Text Content left
+                    // Scrim gradient for contrast and readability
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.35f),
+                                        Color.Black.copy(alpha = 0.85f)
+                                    )
+                                )
+                            )
+                    )
+
+                    // Text Content at bottom-left
                     Column(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(0.68f)
-                            .padding(22.dp),
-                        verticalArrangement = Arrangement.Center
+                            .align(Alignment.BottomStart)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
                             text = greetingText,
@@ -484,13 +470,12 @@ fun DashboardScreen(
                                 letterSpacing = (-0.2).sp
                             )
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Pantau kondisi armada dan catat aktivitas harian dengan mudah.",
+                            text = "Tim & Armada Operasional Informa Hub Kediri",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                color = Color.White.copy(alpha = 0.85f),
+                                color = Color.White.copy(alpha = 0.92f),
                                 fontSize = 11.sp,
-                                lineHeight = 15.sp
+                                fontWeight = FontWeight.Medium
                             )
                         )
                     }

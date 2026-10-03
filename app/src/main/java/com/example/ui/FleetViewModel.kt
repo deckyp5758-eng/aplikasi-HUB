@@ -391,7 +391,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         val cleanPin = InputSanitizer.sanitizeNumeric(_pinInput.value)
 
         if (cleanDriverId.isEmpty()) {
-            _loginError.value = "Silakan masukkan ID Driver yang valid."
+            _loginError.value = "Silakan masukkan ID yang valid."
             return
         }
         if (cleanPin.isEmpty()) {

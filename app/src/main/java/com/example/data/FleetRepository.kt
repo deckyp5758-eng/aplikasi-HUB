@@ -353,7 +353,7 @@ class FleetRepository(
                     db.driverDao().insertDrivers(listOf(DriverEntity(returnedId, returnedName, cleanPin)))
                     LoginResult.Success(returnedName, returnedId, returnedRole, returnedJabatan)
                 } else {
-                    LoginResult.Error(response.message ?: "ID Driver atau PIN salah.")
+                    LoginResult.Error(response.message ?: "ID atau PIN salah.")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error server login, fallback offline: ${e.message}")
@@ -368,13 +368,13 @@ class FleetRepository(
                         LoginResult.Error("PIN Keamanan salah.")
                     }
                 } else {
-                    LoginResult.Error("Gagal terhubung ke server dan ID Driver tidak ada di cache lokal.")
+                    LoginResult.Error("Gagal terhubung ke server dan ID tidak ada di cache lokal.")
                 }
             }
         } else {
             // Mode luring (Offline) penuh
             if (matchingDriver == null) {
-                return LoginResult.Error("ID Driver atau Nama tidak terdaftar di sistem.")
+                return LoginResult.Error("ID atau Nama tidak terdaftar di sistem.")
             }
             return if (matchingDriver.pin.isBlank() || matchingDriver.pin == cleanPin) {
                 prefs.loggedInDriverName = matchingDriver.namaDriver
