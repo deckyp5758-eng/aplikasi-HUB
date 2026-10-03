@@ -103,6 +103,13 @@ jobs:
             CERT_SHA256=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep -i "SHA256:" | head -n 1 | awk '{print $2}')
             echo "Signing Keystore Fingerprint (SHA-256): $CERT_SHA256"
             echo "Keystore verifikasi: SUKSES (Konsistensi tanda tangan APK dijamin)."
+
+            # 5. Siapkan my-upload-key.jks untuk signing Release dengan Google R8
+            cp ~/.android/debug.keystore "$RUNNER_TEMP/my-upload-key.jks"
+            keytool -changealias -alias androiddebugkey -destalias upload -keystore "$RUNNER_TEMP/my-upload-key.jks" -storepass android
+            cp "$RUNNER_TEMP/my-upload-key.jks" ./app/my-upload-key.jks
+            cp "$RUNNER_TEMP/my-upload-key.jks" ./my-upload-key.jks
+            echo "Release Signing Key (alias: upload) berhasil disiapkan untuk Google R8."
           else
             echo "::error::Gagal memulihkan valid debug.keystore dari Secret maupun file repository! Build dibatalkan untuk mencegah APK terdistribusi dengan tanda tangan key baru."
             exit 1
@@ -141,14 +148,20 @@ jobs:
           echo "Menjalankan JVM unit tests..."
           ./gradlew :app:testDebugUnitTest --no-daemon
 
-      - name: Build APK
+      - name: Build APK (Release with Google R8)
+        env:
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
         run: |
-          ./gradlew :app:assembleDebug --no-daemon --info
+          ./gradlew :app:assembleRelease --no-daemon --info
 
       - name: Validate & Prepare APK Asset
         id: prepare_apk
         run: |
-          APK_SRC=$(find app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          APK_SRC=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
+            APK_SRC=$(find app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          fi
           if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
             echo "::error::File APK tidak ditemukan pada direktori build output!"
             exit 1
