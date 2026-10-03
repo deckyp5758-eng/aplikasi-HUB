@@ -342,12 +342,16 @@ class FleetRepository(
                 if (response.success && response.driverName != null) {
                     val returnedId = response.driverId ?: matchingDriver?.idDriver ?: cleanDriverId
                     val returnedName = response.driverName ?: matchingDriver?.namaDriver ?: cleanDriverId
+                    val returnedRole = response.role ?: response.jabatan ?: ""
+                    val returnedJabatan = response.jabatan ?: response.role ?: ""
 
                     prefs.loggedInDriverName = returnedName
                     prefs.loggedInDriverId = returnedId
+                    prefs.loggedInRole = returnedRole
+                    prefs.loggedInJabatan = returnedJabatan
                     // Simpan ke DB lokal
                     db.driverDao().insertDrivers(listOf(DriverEntity(returnedId, returnedName, cleanPin)))
-                    LoginResult.Success(returnedName, returnedId)
+                    LoginResult.Success(returnedName, returnedId, returnedRole, returnedJabatan)
                 } else {
                     LoginResult.Error(response.message ?: "ID Driver atau PIN salah.")
                 }
@@ -357,7 +361,9 @@ class FleetRepository(
                     if (matchingDriver.pin.isBlank() || matchingDriver.pin == cleanPin) {
                         prefs.loggedInDriverName = matchingDriver.namaDriver
                         prefs.loggedInDriverId = matchingDriver.idDriver
-                        LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
+                        val savedRole = prefs.loggedInRole
+                        val savedJabatan = prefs.loggedInJabatan
+                        LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver, savedRole, savedJabatan)
                     } else {
                         LoginResult.Error("PIN Keamanan salah.")
                     }
@@ -373,7 +379,9 @@ class FleetRepository(
             return if (matchingDriver.pin.isBlank() || matchingDriver.pin == cleanPin) {
                 prefs.loggedInDriverName = matchingDriver.namaDriver
                 prefs.loggedInDriverId = matchingDriver.idDriver
-                LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver)
+                val savedRole = prefs.loggedInRole
+                val savedJabatan = prefs.loggedInJabatan
+                LoginResult.Success(matchingDriver.namaDriver, matchingDriver.idDriver, savedRole, savedJabatan)
             } else {
                 LoginResult.Error("PIN Keamanan salah.")
             }
@@ -1826,7 +1834,12 @@ sealed interface SubmitServiceResult {
 }
 
 sealed interface LoginResult {
-    data class Success(val driverName: String, val driverId: String) : LoginResult
+    data class Success(
+        val driverName: String,
+        val driverId: String,
+        val role: String = "",
+        val jabatan: String = ""
+    ) : LoginResult
     data class Error(val message: String) : LoginResult
 }
 

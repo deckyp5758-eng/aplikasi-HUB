@@ -205,9 +205,17 @@ fun AppContent(viewModel: FleetViewModel) {
 @Composable
 fun MainAppScaffold(viewModel: FleetViewModel, driverName: String) {
     val context = LocalContext.current
+    val userRole by viewModel.loggedInRole.collectAsStateWithLifecycle()
     var activeScreen by remember { mutableStateOf("dashboard") }
     var showExitDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+
+    // Navigation guard untuk memastikan pengguna hanya bisa membuka layar sesuai role matriks
+    LaunchedEffect(activeScreen, userRole) {
+        if (!RolePermissionMatrix.isScreenAllowed(userRole, activeScreen, driverName)) {
+            activeScreen = "dashboard"
+        }
+    }
     
     BackHandler(enabled = true) {
         if (activeScreen != "dashboard") {
@@ -267,8 +275,9 @@ fun MainAppScaffold(viewModel: FleetViewModel, driverName: String) {
                                     overflow = TextOverflow.Ellipsis,
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
+                                val roleDisplay = if (userRole.isNotBlank()) userRole.uppercase() else AppRole.resolveRole(userRole, driverName).name
                                 Text(
-                                    "Driver: ${driverName.uppercase()}",
+                                    "$roleDisplay: ${driverName.uppercase()}",
                                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

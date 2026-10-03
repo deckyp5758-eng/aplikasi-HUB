@@ -62,6 +62,8 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.*
 import com.example.ui.FleetViewModel
+import com.example.ui.MenuItemId
+import com.example.ui.RolePermissionMatrix
 import com.example.utils.CommonUtils
 import com.example.utils.ImageCompressor
 import com.example.ui.components.InAppUpdateDialog
@@ -77,6 +79,11 @@ fun DashboardScreen(
     val armadaList by viewModel.armadaList.collectAsStateWithLifecycle()
     val logs by viewModel.logs.collectAsStateWithLifecycle()
     val banList by viewModel.banList.collectAsStateWithLifecycle()
+    val userRole by viewModel.loggedInRole.collectAsStateWithLifecycle()
+
+    val allowedMenuItems = remember(userRole, driverName) {
+        RolePermissionMatrix.getAllowedMenuItems(userRole, driverName)
+    }
 
     val dueAkiList = remember(banList) {
         banList.filter { it.posisi.trim().uppercase() == "AKI" }.map { aki ->
@@ -491,138 +498,85 @@ fun DashboardScreen(
             }
         }
 
-        // 2. Menu Utama Title & 4x2 Grid (All 8 menus)
+        // 2. Menu Utama Dinamis Sesuai Matriks Hak Akses Role
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Menu Utama",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-
-                // Row 1: Status Armada & Log Harian
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MenuGridItem(
-                        title = "Status Armada",
-                        description = "Pantau status & kilometer armada",
-                        icon = Icons.Default.LocalShipping,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFF0054A6),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateToScreen("armada") }
+                    Text(
+                        "Menu Utama",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                    MenuGridItem(
-                        title = "Log Harian",
-                        description = "Catat KM & aktivitas harian armada",
-                        icon = Icons.Default.Speed,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFF059669),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateToScreen("form") }
-                    )
+                    val activeRole = remember(userRole, driverName) {
+                        com.example.ui.AppRole.resolveRole(userRole, driverName).name
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "HAK AKSES: $activeRole",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Row 2: Catat Servis & Catatan Driver
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MenuGridItem(
-                        title = "Catat Servis",
-                        description = "Input servis & penggantian part",
-                        icon = Icons.Default.Build,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFFDC2626),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateToScreen("service") }
-                    )
-                    MenuGridItem(
-                        title = "Catatan Driver",
-                        description = "Input & simpan keluhan driver",
-                        icon = Icons.Default.RateReview,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFFD97706),
-                        modifier = Modifier.weight(1f),
-                        onClick = { showCatatanDriverDialog = true }
-                    )
+                val menuPairs = remember(allowedMenuItems) {
+                    allowedMenuItems.chunked(2)
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Row 3: Laporan & Pengaturan
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MenuGridItem(
-                        title = "Laporan",
-                        description = "Lihat laporan & rekap data",
-                        icon = Icons.Default.BarChart,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFF7C3AED),
-                        modifier = Modifier.weight(1f),
-                        onClick = { showLaporanDialog = true }
-                    )
-                    MenuGridItem(
-                        title = "Pengaturan",
-                        description = "Kelola Google Sheet & API Key",
-                        icon = Icons.Default.Settings,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFF475569),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateToScreen("settings") }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Row 4: Pengajuan & Arsip Pengiriman
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MenuGridItem(
-                        title = "Pengajuan Ban/Aks",
-                        description = "Pengajuan ban & aksesoris armada",
-                        icon = Icons.Default.ShoppingCart,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFFE11D48),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateToScreen("pengajuan") }
-                    )
-                    MenuGridItem(
-                        title = "Arsip Pengiriman",
-                        description = "Simpan arsip bukti kirim",
-                        icon = Icons.Default.CloudUpload,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFF0891B2),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateToScreen("arsip_pengiriman") }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Row 5: Keluar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MenuGridItem(
-                        title = "Keluar",
-                        description = "Keluar dari sesi driver",
-                        icon = Icons.AutoMirrored.Filled.ExitToApp,
-                        iconColor = Color.White,
-                        circleBgColor = Color(0xFF991B1B),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onLogoutClick() }
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
+                for (pair in menuPairs) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val item1 = pair[0]
+                        MenuGridItem(
+                            title = item1.title,
+                            description = item1.description,
+                            icon = item1.icon,
+                            iconColor = Color.White,
+                            circleBgColor = item1.circleBgColor,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                when (item1.id) {
+                                    MenuItemId.CATATAN_DRIVER -> showCatatanDriverDialog = true
+                                    MenuItemId.LAPORAN -> showLaporanDialog = true
+                                    MenuItemId.KELUAR -> onLogoutClick()
+                                    else -> item1.destinationScreen?.let { onNavigateToScreen(it) }
+                                }
+                            }
+                        )
+                        if (pair.size > 1) {
+                            val item2 = pair[1]
+                            MenuGridItem(
+                                title = item2.title,
+                                description = item2.description,
+                                icon = item2.icon,
+                                iconColor = Color.White,
+                                circleBgColor = item2.circleBgColor,
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    when (item2.id) {
+                                        MenuItemId.CATATAN_DRIVER -> showCatatanDriverDialog = true
+                                        MenuItemId.LAPORAN -> showLaporanDialog = true
+                                        MenuItemId.KELUAR -> onLogoutClick()
+                                        else -> item2.destinationScreen?.let { onNavigateToScreen(it) }
+                                    }
+                                }
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
             }
         }

@@ -103,6 +103,12 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _loggedInDriverName = MutableStateFlow(prefs.loggedInDriverName)
     val loggedInDriverName: StateFlow<String> = _loggedInDriverName.asStateFlow()
 
+    private val _loggedInRole = MutableStateFlow(prefs.loggedInRole)
+    val loggedInRole: StateFlow<String> = _loggedInRole.asStateFlow()
+
+    private val _loggedInJabatan = MutableStateFlow(prefs.loggedInJabatan)
+    val loggedInJabatan: StateFlow<String> = _loggedInJabatan.asStateFlow()
+
     // Loaded Lists
     private val _drivers = MutableStateFlow<List<DriverEntity>>(emptyList())
     val drivers: StateFlow<List<DriverEntity>> = _drivers.asStateFlow()
@@ -226,6 +232,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Initial fetch
+        if (prefs.loggedInDriverName.isNotEmpty() && prefs.loggedInRole.isEmpty()) {
+            val resolved = com.example.ui.AppRole.resolveRole("", prefs.loggedInDriverName).name
+            prefs.loggedInRole = resolved
+            prefs.loggedInJabatan = resolved
+            _loggedInRole.value = resolved
+            _loggedInJabatan.value = resolved
+        }
         refreshMetadata()
         checkForUpdates()
 
@@ -392,6 +405,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             when (val result = repository.validateLogin(cleanDriverId, cleanPin)) {
                 is LoginResult.Success -> {
                     _loggedInDriverName.value = result.driverName
+                    _loggedInRole.value = result.role
+                    _loggedInJabatan.value = result.jabatan
                     _pinInput.value = ""
                     _selectedDriverName.value = ""
                     onSuccess()
@@ -407,6 +422,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     fun logout(onSuccess: () -> Unit) {
         prefs.clearLogin()
         _loggedInDriverName.value = ""
+        _loggedInRole.value = ""
+        _loggedInJabatan.value = ""
         onSuccess()
     }
 

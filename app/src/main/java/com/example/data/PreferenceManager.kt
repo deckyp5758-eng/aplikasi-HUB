@@ -34,6 +34,14 @@ class PreferenceManager(context: Context) {
         get() = prefs.getString("logged_in_driver_id", "") ?: ""
         set(value) = prefs.edit().putString("logged_in_driver_id", value).apply()
 
+    var loggedInRole: String
+        get() = prefs.getString("logged_in_role", "") ?: ""
+        set(value) = prefs.edit().putString("logged_in_role", value).apply()
+
+    var loggedInJabatan: String
+        get() = prefs.getString("logged_in_jabatan", "") ?: ""
+        set(value) = prefs.edit().putString("logged_in_jabatan", value).apply()
+
     var geminiApiKey: String
         get() {
             val secureKey = try { secureStorage?.getString("encrypted_gemini_key", "") ?: "" } catch (e: Exception) { "" }
@@ -61,6 +69,8 @@ class PreferenceManager(context: Context) {
         prefs.edit()
             .remove("logged_in_driver_name")
             .remove("logged_in_driver_id")
+            .remove("logged_in_role")
+            .remove("logged_in_jabatan")
             .apply()
     }
 }

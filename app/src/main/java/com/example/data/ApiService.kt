@@ -348,6 +348,8 @@ data class LoginApiResponse(
     val success: Boolean,
     val driverId: String?,
     val driverName: String?,
+    val role: String? = null,
+    val jabatan: String? = null,
     val message: String?
 )
 
