@@ -183,6 +183,31 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    // Service AC States (Khusus Role DRIVER)
+    private val _serviceAcList = MutableStateFlow<List<ServiceAcEntity>>(emptyList())
+    val serviceAcList: StateFlow<List<ServiceAcEntity>> = _serviceAcList.asStateFlow()
+
+    private val _serviceAcSelectedArmadaId = MutableStateFlow("")
+    val serviceAcSelectedArmadaId: StateFlow<String> = _serviceAcSelectedArmadaId.asStateFlow()
+
+    private val _serviceAcNoPolisi = MutableStateFlow("")
+    val serviceAcNoPolisi: StateFlow<String> = _serviceAcNoPolisi.asStateFlow()
+
+    private val _serviceAcKmSaatIni = MutableStateFlow(0)
+    val serviceAcKmSaatIni: StateFlow<Int> = _serviceAcKmSaatIni.asStateFlow()
+
+    private val _serviceAcKmInput = MutableStateFlow("")
+    val serviceAcKmInput: StateFlow<String> = _serviceAcKmInput.asStateFlow()
+
+    private val _serviceAcLoading = MutableStateFlow(false)
+    val serviceAcLoading: StateFlow<Boolean> = _serviceAcLoading.asStateFlow()
+
+    private val _serviceAcError = MutableStateFlow<String?>(null)
+    val serviceAcError: StateFlow<String?> = _serviceAcError.asStateFlow()
+
+    private val _serviceAcSuccess = MutableStateFlow<SubmitServiceAcApiResponse?>(null)
+    val serviceAcSuccess: StateFlow<SubmitServiceAcApiResponse?> = _serviceAcSuccess.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
@@ -230,6 +255,11 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 _pengirimanList.value = it
             }
         }
+        viewModelScope.launch {
+            repository.localServiceAc.collectLatest {
+                _serviceAcList.value = it
+            }
+        }
 
         // Initial fetch
         if (prefs.loggedInDriverName.isNotEmpty() && prefs.loggedInRole.isEmpty()) {
@@ -268,6 +298,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 _logs.value = repository.getLogsList()
                 _banList.value = repository.getBanArmadaList()
                 checkAkiAgeAndNotify(_banList.value)
+                try {
+                    _serviceAcList.value = repository.getServiceAc()
+                } catch (_: Exception) {}
                 _dataErrorMessage.value = null
             } catch (e: Exception) {
                 val err = "Gagal mengambil data dari Google Apps Script: ${e.localizedMessage ?: "Kesalahan koneksi"}"
@@ -1389,5 +1422,104 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             }
             _isPengajuanSubmitting.value = false
         }
+    }
+
+    // ==========================================
+    // SERVICE AC METHODS (KHUSUS ROLE DRIVER)
+    // ==========================================
+
+    fun selectServiceAcArmada(armadaId: String) {
+        val cleanId = armadaId.trim().uppercase()
+        _serviceAcSelectedArmadaId.value = cleanId
+        val matchingArmada = _armadaList.value.find { it.armadaId.equals(cleanId, ignoreCase = true) }
+        _serviceAcNoPolisi.value = matchingArmada?.noPolisi ?: ""
+        _serviceAcKmSaatIni.value = matchingArmada?.kmSaatIni ?: 0
+        _serviceAcError.value = null
+    }
+
+    fun onServiceAcKmChange(km: String) {
+        _serviceAcKmInput.value = km
+        if (_serviceAcError.value != null) {
+            _serviceAcError.value = null
+        }
+    }
+
+    fun loadServiceAcData() {
+        viewModelScope.launch {
+            try {
+                val list = repository.getServiceAc()
+                _serviceAcList.value = list
+            } catch (e: Exception) {
+                android.util.Log.e("FleetViewModel", "Gagal loadServiceAcData: ${e.message}")
+            }
+        }
+    }
+
+    fun submitServiceAc(onSuccess: (() -> Unit)? = null) {
+        val armadaId = _serviceAcSelectedArmadaId.value.trim()
+        val kmText = _serviceAcKmInput.value.trim()
+
+        if (armadaId.isEmpty()) {
+            _serviceAcError.value = "Armada wajib dipilih."
+            return
+        }
+
+        if (kmText.isEmpty()) {
+            _serviceAcError.value = "KM Service AC wajib diisi."
+            return
+        }
+
+        val kmInt = kmText.toIntOrNull()
+        if (kmInt == null) {
+            _serviceAcError.value = "KM harus berupa angka."
+            return
+        }
+
+        if (kmInt <= 0) {
+            _serviceAcError.value = "KM harus lebih besar dari nol."
+            return
+        }
+
+        if (_serviceAcLoading.value) return // Prevent double tap
+
+        viewModelScope.launch {
+            _serviceAcLoading.value = true
+            _serviceAcError.value = null
+            val driverName = _loggedInDriverName.value
+            val driverId = prefs.loggedInDriverId.ifEmpty { driverName }
+
+            val result = repository.submitServiceAc(
+                armadaId = armadaId,
+                kmServiceAc = kmInt,
+                driverId = driverId,
+                driverName = driverName
+            )
+
+            result.fold(
+                onSuccess = { response ->
+                    _serviceAcSuccess.value = response
+                    _serviceAcKmInput.value = ""
+                    loadServiceAcData()
+                    onSuccess?.invoke()
+                },
+                onFailure = { error ->
+                    _serviceAcError.value = error.message ?: "Gagal menyimpan Service AC."
+                }
+            )
+            _serviceAcLoading.value = false
+        }
+    }
+
+    fun dismissServiceAcSuccess() {
+        _serviceAcSuccess.value = null
+    }
+
+    fun resetServiceAcState() {
+        _serviceAcSelectedArmadaId.value = ""
+        _serviceAcNoPolisi.value = ""
+        _serviceAcKmSaatIni.value = 0
+        _serviceAcKmInput.value = ""
+        _serviceAcError.value = null
+        _serviceAcSuccess.value = null
     }
 }

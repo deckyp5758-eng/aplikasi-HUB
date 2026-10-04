@@ -1799,6 +1799,151 @@ ATURAN KETAT:
             return SubmitPengajuanResult.Success(generatedNo, "Pengajuan disimpan secara lokal.")
         }
     }
+
+    val localServiceAc: Flow<List<ServiceAcEntity>> = db.serviceAcDao().getAllServiceAc()
+
+    suspend fun getServiceAc(): List<ServiceAcEntity> {
+        if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val response = service.getServiceAc(spreadsheetId = prefs.googleSheetId)
+                if (response.success == true && response.data != null) {
+                    val entities = response.data.mapNotNull { item ->
+                        val aId = item.armadaId?.trim()?.uppercase()
+                        if (aId.isNullOrEmpty()) return@mapNotNull null
+                        ServiceAcEntity(
+                            armadaId = aId,
+                            noPolisi = item.noPolisi ?: "",
+                            kmSaatIni = item.kmSaatIni ?: 0,
+                            tglServiceTerakhir = item.tglServiceTerakhir ?: "",
+                            kmServiceTerakhir = item.kmServiceTerakhir ?: 0,
+                            jadwalService = item.jadwalService ?: "6 BULAN",
+                            intervalBulan = item.intervalBulan ?: 6,
+                            intervalKm = item.intervalKm ?: 10000,
+                            serviceAcBerikutnya = item.serviceAcBerikutnya ?: "",
+                            kmServiceBerikutnya = item.kmServiceBerikutnya ?: 0,
+                            sisaKm = item.sisaKm ?: 0,
+                            status = item.status ?: "NORMAL",
+                            catatan = item.catatan ?: ""
+                        )
+                    }
+                    if (entities.isNotEmpty()) {
+                        db.serviceAcDao().insertAll(entities)
+                    }
+                    return entities
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Notice fetching service AC from remote: ${e.message}")
+            }
+        }
+        return db.serviceAcDao().getAllServiceAcList()
+    }
+
+    suspend fun submitServiceAc(
+        armadaId: String,
+        kmServiceAc: Int,
+        driverId: String = prefs.loggedInDriverId,
+        driverName: String = prefs.loggedInDriverName,
+        catatan: String = ""
+    ): Result<SubmitServiceAcApiResponse> {
+        val cleanArmadaId = armadaId.trim().uppercase()
+        if (cleanArmadaId.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Armada ID tidak boleh kosong."))
+        }
+        if (kmServiceAc <= 0) {
+            return Result.failure(IllegalArgumentException("KM Service AC harus berupa angka positif lebih dari nol."))
+        }
+
+        val masterArmada = db.armadaDao().getArmadaById(cleanArmadaId)
+        val noPolisi = masterArmada?.noPolisi ?: ""
+        val kmSaatIni = masterArmada?.kmSaatIni ?: 0
+
+        if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val response = service.submitServiceAc(
+                    request = SubmitServiceAcApiRequest(
+                        armadaId = cleanArmadaId,
+                        kmServiceAc = kmServiceAc,
+                        driverId = driverId,
+                        driverName = driverName,
+                        catatan = catatan,
+                        spreadsheetId = prefs.googleSheetId
+                    ),
+                    spreadsheetId = prefs.googleSheetId
+                )
+
+                if (response.success == true) {
+                    val entity = ServiceAcEntity(
+                        armadaId = response.armadaId ?: cleanArmadaId,
+                        noPolisi = response.noPolisi ?: noPolisi,
+                        kmSaatIni = response.kmSaatIni ?: kmSaatIni,
+                        tglServiceTerakhir = response.tanggalService ?: com.example.utils.ServiceAcUtils.formatDate(java.util.Date()),
+                        kmServiceTerakhir = response.kmServiceAc ?: kmServiceAc,
+                        jadwalService = "6 BULAN",
+                        intervalBulan = response.intervalBulan ?: 6,
+                        intervalKm = response.intervalKm ?: 10000,
+                        serviceAcBerikutnya = response.serviceAcBerikutnya ?: "",
+                        kmServiceBerikutnya = response.kmServiceBerikutnya ?: (kmServiceAc + 10000),
+                        sisaKm = response.sisaKm ?: ((kmServiceAc + 10000) - kmSaatIni),
+                        status = response.status ?: "NORMAL",
+                        catatan = catatan
+                    )
+                    db.serviceAcDao().insertOrUpdate(entity)
+                    return Result.success(response)
+                } else {
+                    return Result.failure(Exception(response.message ?: "Gagal menyimpan Service AC."))
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error remote submitServiceAc, falling back to local: ${e.message}")
+            }
+        }
+
+        // Offline mode / Fallback local calculation
+        val calc = com.example.utils.ServiceAcUtils.calculateServiceAc(
+            armadaId = cleanArmadaId,
+            noPolisi = noPolisi,
+            kmSaatIni = kmSaatIni,
+            tglServiceTerakhir = com.example.utils.ServiceAcUtils.formatDate(java.util.Date()),
+            kmServiceTerakhir = kmServiceAc,
+            intervalBulan = 6,
+            intervalKm = 10000,
+            catatan = catatan
+        )
+        val localEntity = ServiceAcEntity(
+            armadaId = calc.armadaId,
+            noPolisi = calc.noPolisi,
+            kmSaatIni = calc.kmSaatIni,
+            tglServiceTerakhir = calc.tglServiceTerakhir,
+            kmServiceTerakhir = calc.kmServiceTerakhir,
+            jadwalService = calc.jadwalService,
+            intervalBulan = calc.intervalBulan,
+            intervalKm = calc.intervalKm,
+            serviceAcBerikutnya = calc.serviceAcBerikutnya,
+            kmServiceBerikutnya = calc.kmServiceBerikutnya,
+            sisaKm = calc.sisaKm,
+            status = calc.status,
+            catatan = calc.catatan
+        )
+        db.serviceAcDao().insertOrUpdate(localEntity)
+
+        val localResp = SubmitServiceAcApiResponse(
+            success = true,
+            message = "Service AC berhasil disimpan",
+            armadaId = calc.armadaId,
+            noPolisi = calc.noPolisi,
+            kmSaatIni = calc.kmSaatIni,
+            kmServiceAc = calc.kmServiceTerakhir,
+            tanggalService = calc.tglServiceTerakhir,
+            intervalBulan = calc.intervalBulan,
+            intervalKm = calc.intervalKm,
+            serviceAcBerikutnya = calc.serviceAcBerikutnya,
+            kmServiceBerikutnya = calc.kmServiceBerikutnya,
+            sisaKm = calc.sisaKm,
+            status = calc.status
+        )
+        return Result.success(localResp)
+    }
 }
 
 data class GeminiDirectResponse(

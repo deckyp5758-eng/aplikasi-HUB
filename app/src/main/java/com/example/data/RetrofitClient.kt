@@ -28,6 +28,8 @@ object RetrofitClient {
         }
 
         val okHttpClient = OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
             .addInterceptor(logging)
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -37,7 +39,7 @@ object RetrofitClient {
         return Retrofit.Builder()
             .baseUrl(url)
             .client(okHttpClient)
-            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .addConverterFactory(MoshiConverterFactory.create(moshi).asLenient())
             .build()
             .create(ApiService::class.java)
     }

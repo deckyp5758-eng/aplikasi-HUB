@@ -22,9 +22,41 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `service_ac` (
+                `armadaId` TEXT NOT NULL,
+                `noPolisi` TEXT NOT NULL,
+                `kmSaatIni` INTEGER NOT NULL,
+                `tglServiceTerakhir` TEXT NOT NULL,
+                `kmServiceTerakhir` INTEGER NOT NULL,
+                `jadwalService` TEXT NOT NULL,
+                `intervalBulan` INTEGER NOT NULL,
+                `intervalKm` INTEGER NOT NULL,
+                `serviceAcBerikutnya` TEXT NOT NULL,
+                `kmServiceBerikutnya` INTEGER NOT NULL,
+                `sisaKm` INTEGER NOT NULL,
+                `status` TEXT NOT NULL,
+                `catatan` TEXT NOT NULL,
+                PRIMARY KEY(`armadaId`)
+            )
+        """.trimIndent())
+    }
+}
+
 @Database(
-    entities = [DriverEntity::class, ArmadaEntity::class, LogHarianEntity::class, BanEntity::class, PengirimanEntity::class, CatatanDriverEntity::class, PengajuanEntity::class],
-    version = 12,
+    entities = [
+        DriverEntity::class,
+        ArmadaEntity::class,
+        LogHarianEntity::class,
+        BanEntity::class,
+        PengirimanEntity::class,
+        CatatanDriverEntity::class,
+        PengajuanEntity::class,
+        ServiceAcEntity::class
+    ],
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -35,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pengirimanDao(): PengirimanDao
     abstract fun catatanDriverDao(): CatatanDriverDao
     abstract fun pengajuanDao(): PengajuanDao
+    abstract fun serviceAcDao(): ServiceAcDao
 
     companion object {
         @Volatile
@@ -47,7 +80,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "fleet_database"
                 )
-                .addMigrations(MIGRATION_10_11, MIGRATION_11_12)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .addCallback(DatabaseCallback(scope))
                 .fallbackToDestructiveMigration()
                 .build()

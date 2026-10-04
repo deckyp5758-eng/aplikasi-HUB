@@ -182,6 +182,21 @@ interface ApiService {
         @Query("action") action: String = "checkUpdate"
     ): AppUpdateResponse
 
+    @GET("exec")
+    suspend fun getServiceAc(
+        @Query("action") action: String = "getServiceAC",
+        @Query("spreadsheetId") spreadsheetId: String? = null,
+        @Query("sheetId") sheetId: String? = null
+    ): ServiceAcApiResponse
+
+    @POST("exec")
+    suspend fun submitServiceAc(
+        @Body request: SubmitServiceAcApiRequest,
+        @Query("action") action: String = "submitServiceAC",
+        @Query("spreadsheetId") spreadsheetId: String? = null,
+        @Query("sheetId") sheetId: String? = null
+    ): SubmitServiceAcApiResponse
+
     @GET
     suspend fun getLatestGitHubRelease(
         @Url url: String = "https://api.github.com/repos/deckyp5758-eng/aplikasi-HUB/releases/latest"
@@ -590,6 +605,57 @@ data class GitHubReleaseAsset(
     val browser_download_url: String? = null,
     val content_type: String? = null
 )
+
+data class SubmitServiceAcApiRequest(
+    val action: String = "submitServiceAC",
+    val armadaId: String,
+    val kmServiceAc: Int,
+    val driverId: String? = null,
+    val driverName: String? = null,
+    val tanggalService: String? = null,
+    val catatan: String? = null,
+    val spreadsheetId: String? = null,
+    val sheetId: String? = null
+)
+
+data class SubmitServiceAcApiResponse(
+    val success: Boolean? = true,
+    val message: String? = null,
+    val armadaId: String? = null,
+    val noPolisi: String? = null,
+    val kmSaatIni: Int? = null,
+    val kmServiceAc: Int? = null,
+    val tanggalService: String? = null,
+    val intervalBulan: Int? = null,
+    val intervalKm: Int? = null,
+    val serviceAcBerikutnya: String? = null,
+    val kmServiceBerikutnya: Int? = null,
+    val sisaKm: Int? = null,
+    val status: String? = null
+)
+
+data class ServiceAcApiItem(
+    val armadaId: String? = "",
+    val noPolisi: String? = "",
+    val kmSaatIni: Int? = 0,
+    val tglServiceTerakhir: String? = "",
+    val kmServiceTerakhir: Int? = 0,
+    val jadwalService: String? = "6 BULAN",
+    val intervalBulan: Int? = 6,
+    val intervalKm: Int? = 10000,
+    val serviceAcBerikutnya: String? = "",
+    val kmServiceBerikutnya: Int? = 0,
+    val sisaKm: Int? = 0,
+    val status: String? = "NORMAL",
+    val catatan: String? = ""
+)
+
+data class ServiceAcApiResponse(
+    val success: Boolean? = true,
+    val message: String? = null,
+    val data: List<ServiceAcApiItem>? = null
+)
+
 
 
 

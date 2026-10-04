@@ -134,3 +134,20 @@ data class ChatMessage(
     val mediaItems: List<ChatMediaItem> = emptyList()
 )
 
+@Entity(tableName = "service_ac")
+data class ServiceAcEntity(
+    @PrimaryKey val armadaId: String,
+    val noPolisi: String,
+    val kmSaatIni: Int,
+    val tglServiceTerakhir: String,
+    val kmServiceTerakhir: Int,
+    val jadwalService: String = "6 BULAN",
+    val intervalBulan: Int = 6,
+    val intervalKm: Int = 10000,
+    val serviceAcBerikutnya: String = "",
+    val kmServiceBerikutnya: Int = 0,
+    val sisaKm: Int = 0,
+    val status: String = "NORMAL",
+    val catatan: String = ""
+)
+

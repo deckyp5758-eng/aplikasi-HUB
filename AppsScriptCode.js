@@ -170,6 +170,13 @@ function doGet(e) {
       return jsonResponse({ success: true, data: getPengiriman(ss, sheetMap) });
     } else if (action === "getAiKnowledge") {
       return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
+    } else if (action === "getServiceAC" || action === "getServiceAc" || action === "get_service_ac") {
+      return jsonResponse({ success: true, data: getServiceAC(ss, sheetMap) });
+    } else if (action === "cleanupLogFiles" || action === "cleanup_log_files" || action === "cleanupOldLogs") {
+      var daysParam = Number(e.parameter.days || 7);
+      return jsonResponse(cleanupOldLogHarianFiles(daysParam));
+    } else if (action === "setupCleanupTrigger" || action === "setup_cleanup_trigger") {
+      return jsonResponse(setupAutoCleanupTrigger());
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
@@ -263,6 +270,15 @@ function doPost(e) {
       return jsonResponse({ success: true, data: getPengiriman(ss, sheetMap) });
     } else if (action === "getAiKnowledge") {
       return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
+    } else if (action === "getServiceAC" || action === "getServiceAc" || action === "get_service_ac") {
+      return jsonResponse({ success: true, data: getServiceAC(ss, sheetMap) });
+    } else if (action === "cleanupLogFiles" || action === "cleanup_log_files" || action === "cleanupOldLogs") {
+      var daysParam = Number(contents.days || 7);
+      return jsonResponse(cleanupOldLogHarianFiles(daysParam));
+    } else if (action === "setupCleanupTrigger" || action === "setup_cleanup_trigger") {
+      return jsonResponse(setupAutoCleanupTrigger());
+    } else if (action === "submitServiceAC" || action === "submitServiceAc" || action === "submit_service_ac") {
+      return jsonResponse(submitServiceAC(contents, ss, sheetMap));
     } else if (action === "login") {
       return jsonResponse(validateLogin(contents, ss, sheetMap));
     } else if (action === "submitLog") {
@@ -1289,6 +1305,355 @@ function submitService(contents, ss, sheetMap) {
     return { success: false, message: "Gagal menyimpan service log: " + e.toString() };
   } finally {
     lock.releaseLock();
+  }
+}
+
+// ============================================
+// SERVICE AC (KHUSUS ROLE DRIVER)
+// ============================================
+
+function getServiceAcSheet(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  return getSheetByNameFromMap(ss, sheetMap, "Service AC") ||
+         getSheetByNameFromMap(ss, sheetMap, "SERVICE AC") ||
+         getSheetByNameFromMap(ss, sheetMap, "service ac") ||
+         getSheetByNameFromMap(ss, sheetMap, "Service_AC");
+}
+
+function getServiceAC(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var sheet = getServiceAcSheet(ss, sheetMap);
+  var list = [];
+  if (!sheet) return list;
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return list;
+
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    if (!r || !r[0]) continue;
+    var aId = String(r[0]).trim().toUpperCase();
+    if (!aId) continue;
+
+    var nPol = r[1] ? String(r[1]).trim() : "";
+    var kmSaatIni = Number(r[2]) || 0;
+    var tglService = formatDateVal(r[3]);
+    var kmService = Number(r[4]) || 0;
+    var jadwal = r[5] ? String(r[5]).trim() : "6 BULAN";
+    var intBulan = Number(r[6]) || 6;
+    var intKm = Number(r[7]) || 10000;
+    var nextTgl = formatDateVal(r[8]);
+    var nextKm = Number(r[9]) || (kmService + intKm);
+    var sisaKm = (r[10] !== undefined && r[10] !== "") ? Number(r[10]) : (nextKm - kmSaatIni);
+    var status = r[11] ? String(r[11]).trim() : "NORMAL";
+    var catatan = (r[12] !== undefined && r[12] !== null) ? String(r[12]).trim() : "";
+
+    list.push({
+      armadaId: aId,
+      noPolisi: nPol,
+      kmSaatIni: kmSaatIni,
+      tglServiceTerakhir: tglService,
+      kmServiceTerakhir: kmService,
+      jadwalService: jadwal,
+      intervalBulan: intBulan,
+      intervalKm: intKm,
+      serviceAcBerikutnya: nextTgl,
+      kmServiceBerikutnya: nextKm,
+      sisaKm: sisaKm,
+      status: status,
+      catatan: catatan
+    });
+  }
+  return list;
+}
+
+function submitServiceAC(contents, ss, sheetMap) {
+  contents = contents || {};
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+
+  var armadaId = String(contents.armadaId || "").trim().toUpperCase();
+  var kmServiceAc = contents.kmServiceAc !== undefined ? Number(contents.kmServiceAc) : (contents.kmService !== undefined ? Number(contents.kmService) : NaN);
+  var driverId = String(contents.driverId || "").trim();
+  var driverName = String(contents.driverName || "").trim();
+  var catatan = String(contents.catatan || "").trim();
+
+  // 1. Validasi input
+  if (!armadaId) {
+    return { success: false, message: "Validasi Gagal: Armada wajib dipilih." };
+  }
+  if (contents.kmServiceAc === undefined && contents.kmService === undefined) {
+    return { success: false, message: "Validasi Gagal: KM Service AC wajib diisi." };
+  }
+  if (isNaN(kmServiceAc)) {
+    return { success: false, message: "Validasi Gagal: KM Service AC harus berupa angka." };
+  }
+  if (kmServiceAc <= 0) {
+    return { success: false, message: "Validasi Gagal: KM Service AC harus lebih besar dari nol dan tidak boleh negatif." };
+  }
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    // 2. Validasi ARMADA ID di tab Armada
+    var armadaSheet = getSheetByNameFromMap(ss, sheetMap, "ARMADA") || getSheetByNameFromMap(ss, sheetMap, "Armada");
+    if (!armadaSheet) {
+      return { success: false, message: "Tab Armada tidak ditemukan di spreadsheet." };
+    }
+
+    var aRows = armadaSheet.getDataRange().getValues();
+    var foundArmada = false;
+    var noPolisi = "";
+    var kmSaatIni = 0;
+
+    for (var i = 1; i < aRows.length; i++) {
+      var rowId = String(aRows[i][0] || "").trim().toUpperCase();
+      if (rowId === armadaId) {
+        foundArmada = true;
+        noPolisi = String(aRows[i][1] || "").trim().toUpperCase();
+        kmSaatIni = Number(aRows[i][2]) || 0;
+        break;
+      }
+    }
+
+    if (!foundArmada) {
+      return { success: false, message: "Validasi Gagal: Armada '" + armadaId + "' tidak ditemukan pada tab master Armada." };
+    }
+
+    // 3. Akses tab Service AC (buat jika belum ada)
+    var serviceSheet = getServiceAcSheet(ss, sheetMap);
+    if (!serviceSheet) {
+      serviceSheet = ss.insertSheet("Service AC");
+      var headers = [
+        "ARMADA ID", "NO POLISI", "KM SAAT INI", "TGL SERVICE AC TERAKHIR",
+        "KM SERVICE AC TERAKHIR", "JADWAL SERVICE", "INTERVAL BULAN",
+        "INTERVAL KM", "SERVICE AC BERIKUTNYA", "KM SERVICE AC BERIKUTNYA",
+        "SISA KM", "STATUS", "CATATAN"
+      ];
+      serviceSheet.appendRow(headers);
+      if (sheetMap && sheetMap.byName) {
+        sheetMap.byName["SERVICE AC"] = serviceSheet;
+      }
+    }
+
+    var serviceData = serviceSheet.getDataRange().getValues();
+    var targetRow = -1;
+
+    for (var s = 1; s < serviceData.length; s++) {
+      var sArmadaId = String(serviceData[s][0] || "").trim().toUpperCase();
+      if (sArmadaId === armadaId) {
+        targetRow = s + 1;
+        break;
+      }
+    }
+
+    var isNewRow = false;
+    if (targetRow === -1) {
+      targetRow = serviceSheet.getLastRow() + 1;
+      isNewRow = true;
+    }
+
+    var today = new Date();
+    var tglServiceStr = Utilities.formatDate(today, "Asia/Jakarta", "yyyy-MM-dd");
+
+    var r = targetRow;
+    var formulaI = '=IF(OR(D' + r + '="",G' + r + '=""),"",EDATE(D' + r + ',G' + r + '))';
+    var formulaJ = '=IF(OR(E' + r + '="",H' + r + '=""),"",E' + r + '+H' + r + ')';
+    var formulaK = '=IF(OR(J' + r + '="",C' + r + '=""),"",J' + r + '-C' + r + ')';
+    var formulaL = '=IF(A' + r + '="","",IF(OR(AND(I' + r + '<>"",TODAY()>=I' + r + '),AND(J' + r + '<>"",C' + r + '<>"",C' + r + '>=J' + r + ')),"JATUH TEMPO",IF(OR(AND(I' + r + '<>"",I' + r + '-TODAY()<=30),AND(J' + r + '<>"",C' + r + '<>"",J' + r + '-C' + r + '<=1000)),"SEGERA SERVIS","NORMAL")))';
+
+    var rowValues = [
+      armadaId,
+      noPolisi,
+      kmSaatIni,
+      tglServiceStr,
+      kmServiceAc,
+      "6 BULAN",
+      6,
+      10000,
+      formulaI,
+      formulaJ,
+      formulaK,
+      formulaL,
+      catatan
+    ];
+
+    if (isNewRow) {
+      serviceSheet.appendRow(rowValues);
+    } else {
+      serviceSheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+    }
+
+    var nextDateObj = new Date(today.getTime());
+    nextDateObj.setMonth(nextDateObj.getMonth() + 6);
+    var nextTglStr = Utilities.formatDate(nextDateObj, "Asia/Jakarta", "yyyy-MM-dd");
+    var kmServiceBerikutnya = kmServiceAc + 10000;
+    var sisaKm = kmServiceBerikutnya - kmSaatIni;
+
+    var diffDays = Math.ceil((nextDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    var calcStatus = "NORMAL";
+    if (today >= nextDateObj || kmSaatIni >= kmServiceBerikutnya) {
+      calcStatus = "JATUH TEMPO";
+    } else if (diffDays <= 30 || sisaKm <= 1000) {
+      calcStatus = "SEGERA SERVIS";
+    }
+
+    return {
+      success: true,
+      message: "Service AC berhasil disimpan",
+      armadaId: armadaId,
+      noPolisi: noPolisi,
+      kmSaatIni: kmSaatIni,
+      kmServiceAc: kmServiceAc,
+      tanggalService: tglServiceStr,
+      intervalBulan: 6,
+      intervalKm: 10000,
+      serviceAcBerikutnya: nextTglStr,
+      kmServiceBerikutnya: kmServiceBerikutnya,
+      sisaKm: sisaKm,
+      status: calcStatus
+    };
+
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch(lErr) {}
+  }
+}
+
+function setupSheetServiceAC(ss) {
+  var sheet = ss.getSheetByName("Service AC") || ss.insertSheet("Service AC");
+  var headers = [["ARMADA ID", "NO POLISI", "KM SAAT INI", "TGL SERVICE AC TERAKHIR", "KM SERVICE AC TERAKHIR", "JADWAL SERVICE", "INTERVAL BULAN", "INTERVAL KM", "SERVICE AC BERIKUTNYA", "KM SERVICE AC BERIKUTNYA", "SISA KM", "STATUS", "CATATAN"]];
+  applyHeaderStyle(sheet, headers, "#0284C7");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+  if (numRows > 0) {
+    sheet.getRange(2, 3, numRows, 1).setNumberFormat("#,##0");
+    sheet.getRange(2, 4, numRows, 1).setNumberFormat("yyyy-mm-dd");
+    sheet.getRange(2, 5, numRows, 1).setNumberFormat("#,##0");
+    sheet.getRange(2, 7, numRows, 2).setNumberFormat("#,##0");
+    sheet.getRange(2, 9, numRows, 1).setNumberFormat("yyyy-mm-dd");
+    sheet.getRange(2, 10, numRows, 2).setNumberFormat("#,##0");
+  }
+}
+
+// ============================================
+// AUTO-CLEANUP LOG HARIAN FILES (> 7 HARI)
+// ============================================
+
+/**
+ * Menghapus file foto Odometer KM dan Nota BBM di Google Drive yang umurnya > N hari (default 7 hari).
+ * Data teks log KM di Google Sheets tetap dipertahankan sebagai riwayat audit.
+ */
+function cleanupOldLogHarianFiles(days) {
+  var retentionDays = (typeof days === "number" && days > 0) ? days : 7;
+  var now = new Date();
+  var cutoffTime = now.getTime() - (retentionDays * 24 * 60 * 60 * 1000);
+  var targetFolderIds = [FOLDER_ID_KM, FOLDER_ID_NOTA_BBM];
+  var deletedCount = 0;
+  var errors = [];
+  var scannedFolders = 0;
+
+  for (var f = 0; f < targetFolderIds.length; f++) {
+    var folderId = targetFolderIds[f];
+    if (!folderId) continue;
+    try {
+      var folder = DriveApp.getFolderById(folderId);
+      if (!folder) continue;
+      scannedFolders++;
+      deletedCount += purgeOldFilesInFolder(folder, cutoffTime, errors);
+    } catch(errFolder) {
+      errors.push("Folder ID [" + folderId + "] error: " + errFolder.toString());
+    }
+  }
+
+  return {
+    success: true,
+    message: "Pembersihan file log harian selesai.",
+    retentionDays: retentionDays,
+    cutoffDate: Utilities.formatDate(new Date(cutoffTime), "Asia/Jakarta", "yyyy-MM-dd HH:mm:ss"),
+    scannedFolders: scannedFolders,
+    deletedFilesCount: deletedCount,
+    errors: errors
+  };
+}
+
+/**
+ * Helper rekursif untuk menghapus file kadaluarsa dalam folder dan subfolder
+ */
+function purgeOldFilesInFolder(folder, cutoffTime, errors) {
+  var count = 0;
+  try {
+    // 1. Periksa file langsung dalam folder
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      try {
+        var createdTime = file.getDateCreated().getTime();
+        var updatedTime = file.getLastUpdated().getTime();
+        var fileTime = Math.max(createdTime, updatedTime);
+
+        if (fileTime < cutoffTime) {
+          file.setTrashed(true);
+          count++;
+        }
+      } catch(fileErr) {
+        if (errors) errors.push("File [" + file.getName() + "] error: " + fileErr.toString());
+      }
+    }
+
+    // 2. Periksa subfolder
+    var subFolders = folder.getFolders();
+    while (subFolders.hasNext()) {
+      var subFolder = subFolders.next();
+      count += purgeOldFilesInFolder(subFolder, cutoffTime, errors);
+    }
+  } catch(e) {
+    if (errors) errors.push("Folder [" + folder.getName() + "] error: " + e.toString());
+  }
+  return count;
+}
+
+/**
+ * Fungsi yang dipanggil oleh Time-Driven Trigger setiap hari
+ */
+function autoCleanupLogHarian7Days() {
+  var result = cleanupOldLogHarianFiles(7);
+  Logger.log("Auto Cleanup Log Harian (7 Hari): " + JSON.stringify(result));
+  return result;
+}
+
+/**
+ * Membuat trigger otomatis harian (dijalankan pukul 01:00 - 02:00 WIB)
+ */
+function setupAutoCleanupTrigger() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "autoCleanupLogHarian7Days") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+
+    ScriptApp.newTrigger("autoCleanupLogHarian7Days")
+      .timeBased()
+      .everyDays(1)
+      .atHour(1)
+      .inTimezone("Asia/Jakarta")
+      .create();
+
+    return {
+      success: true,
+      message: "Trigger otomatis harian 'autoCleanupLogHarian7Days' berhasil dipasang (Pukul 01:00 - 02:00 WIB)."
+    };
+  } catch(e) {
+    return {
+      success: false,
+      message: "Gagal memasang trigger: " + e.toString()
+    };
   }
 }
 

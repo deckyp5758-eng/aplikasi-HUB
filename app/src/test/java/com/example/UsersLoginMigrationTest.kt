@@ -558,12 +558,14 @@ class UsersLoginMigrationTest {
         assertFalse(menuIds.contains(MenuItemId.LOG_HARIAN))
         assertFalse(menuIds.contains(MenuItemId.CATATAN_DRIVER))
         assertFalse(menuIds.contains(MenuItemId.PENGAJUAN_BAN))
+        assertFalse(menuIds.contains(MenuItemId.SERVICE_AC))
         assertFalse(menuIds.contains(MenuItemId.ARSIP_PENGIRIMAN))
 
         // Screen guard check
         assertTrue(RolePermissionMatrix.isScreenAllowed("STAFF", "armada"))
         assertTrue(RolePermissionMatrix.isScreenAllowed("STAFF", "service"))
         assertTrue(RolePermissionMatrix.isScreenAllowed("STAFF", "settings"))
+        assertFalse(RolePermissionMatrix.isScreenAllowed("STAFF", "service_ac"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("STAFF", "form"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("STAFF", "pengajuan"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("STAFF", "arsip_pengiriman"))
@@ -574,10 +576,11 @@ class UsersLoginMigrationTest {
         val menuItems = RolePermissionMatrix.getAllowedMenuItems("DRIVER")
         val menuIds = menuItems.map { it.id }
 
-        // Sesuai matriks: Status Armada, Catatan driver, Pengajuan Ban/aks (+ keluar)
+        // Sesuai matriks: Status Armada, Catatan driver, Pengajuan Ban/aks, Service AC (+ keluar)
         assertTrue(menuIds.contains(MenuItemId.STATUS_ARMADA))
         assertTrue(menuIds.contains(MenuItemId.CATATAN_DRIVER))
         assertTrue(menuIds.contains(MenuItemId.PENGAJUAN_BAN))
+        assertTrue(menuIds.contains(MenuItemId.SERVICE_AC))
         assertTrue(menuIds.contains(MenuItemId.KELUAR))
 
         // Tidak boleh memiliki menu staff/kenek
@@ -590,6 +593,7 @@ class UsersLoginMigrationTest {
         // Screen guard check
         assertTrue(RolePermissionMatrix.isScreenAllowed("DRIVER", "armada"))
         assertTrue(RolePermissionMatrix.isScreenAllowed("DRIVER", "pengajuan"))
+        assertTrue(RolePermissionMatrix.isScreenAllowed("DRIVER", "service_ac"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("DRIVER", "service"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("DRIVER", "form"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("DRIVER", "arsip_pengiriman"))
@@ -611,6 +615,7 @@ class UsersLoginMigrationTest {
         assertFalse(menuIds.contains(MenuItemId.CATAT_SERVICE))
         assertFalse(menuIds.contains(MenuItemId.CATATAN_DRIVER))
         assertFalse(menuIds.contains(MenuItemId.PENGAJUAN_BAN))
+        assertFalse(menuIds.contains(MenuItemId.SERVICE_AC))
         assertFalse(menuIds.contains(MenuItemId.LAPORAN))
         assertFalse(menuIds.contains(MenuItemId.PENGATURAN))
 
@@ -618,6 +623,7 @@ class UsersLoginMigrationTest {
         assertTrue(RolePermissionMatrix.isScreenAllowed("KENEK", "armada"))
         assertTrue(RolePermissionMatrix.isScreenAllowed("KENEK", "form"))
         assertTrue(RolePermissionMatrix.isScreenAllowed("KENEK", "arsip_pengiriman"))
+        assertFalse(RolePermissionMatrix.isScreenAllowed("KENEK", "service_ac"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("KENEK", "service"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("KENEK", "pengajuan"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("KENEK", "settings"))
@@ -637,6 +643,7 @@ class UsersLoginMigrationTest {
         assertFalse(menuIds.contains(MenuItemId.CATAT_SERVICE))
         assertFalse(menuIds.contains(MenuItemId.CATATAN_DRIVER))
         assertFalse(menuIds.contains(MenuItemId.PENGAJUAN_BAN))
+        assertFalse(menuIds.contains(MenuItemId.SERVICE_AC))
         assertFalse(menuIds.contains(MenuItemId.LOG_HARIAN))
         assertFalse(menuIds.contains(MenuItemId.ARSIP_PENGIRIMAN))
         assertFalse(menuIds.contains(MenuItemId.LAPORAN))
@@ -644,6 +651,7 @@ class UsersLoginMigrationTest {
 
         // Screen guard check
         assertTrue(RolePermissionMatrix.isScreenAllowed("LP", "armada"))
+        assertFalse(RolePermissionMatrix.isScreenAllowed("LP", "service_ac"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("LP", "service"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("LP", "form"))
         assertFalse(RolePermissionMatrix.isScreenAllowed("LP", "pengajuan"))

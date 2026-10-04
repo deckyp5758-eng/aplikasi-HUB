@@ -135,3 +135,28 @@ interface PengajuanDao {
     @Query("DELETE FROM pengajuan")
     suspend fun clearAll()
 }
+
+@Dao
+interface ServiceAcDao {
+    @Query("SELECT * FROM service_ac ORDER BY armadaId ASC")
+    fun getAllServiceAc(): Flow<List<ServiceAcEntity>>
+
+    @Query("SELECT * FROM service_ac ORDER BY armadaId ASC")
+    suspend fun getAllServiceAcList(): List<ServiceAcEntity>
+
+    @Query("SELECT * FROM service_ac WHERE armadaId = :armadaId LIMIT 1")
+    suspend fun getServiceAcById(armadaId: String): ServiceAcEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(item: ServiceAcEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<ServiceAcEntity>)
+
+    @Query("DELETE FROM service_ac WHERE armadaId = :armadaId")
+    suspend fun deleteByArmadaId(armadaId: String)
+
+    @Query("DELETE FROM service_ac")
+    suspend fun clearAll()
+}
+

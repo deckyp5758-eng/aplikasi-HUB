@@ -324,6 +324,7 @@ fun MainAppScaffold(viewModel: FleetViewModel, driverName: String) {
                     "settings" -> "Pengaturan"
                     "arsip_pengiriman" -> "Arsip Pengiriman"
                     "pengajuan" -> "Pengajuan (Ban & Aksesoris)"
+                    "service_ac" -> "Service AC"
                     else -> ""
                 }
                 TopAppBar(
@@ -373,6 +374,7 @@ fun MainAppScaffold(viewModel: FleetViewModel, driverName: String) {
                 "settings" -> SettingsScreen(viewModel = viewModel)
                 "arsip_pengiriman" -> ArsipPengirimanScreen(viewModel = viewModel, driverName = driverName)
                 "pengajuan" -> PengajuanScreen(viewModel = viewModel, driverName = driverName)
+                "service_ac" -> ServiceACScreen(viewModel = viewModel, onNavigateBack = { activeScreen = "dashboard" })
             }
 
             // Global dialogs

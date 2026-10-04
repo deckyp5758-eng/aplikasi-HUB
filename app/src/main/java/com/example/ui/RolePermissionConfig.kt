@@ -29,31 +29,14 @@ enum class AppRole {
         }
 
         /**
-         * Resolves role either from saved role string, or automatically resolves from driver name/ID
-         * for backward compatibility with active login sessions.
+         * Resolves role from saved role/jabatan string from Users tab login result.
+         * Role must not be determined by hardcoded driver names or IDs.
+         * Empty or unknown roles resolve to UNKNOWN.
          */
         fun resolveRole(role: String?, driverNameOrId: String? = null): AppRole {
             val fromRole = fromString(role)
             if (fromRole != UNKNOWN) return fromRole
-
-            val nameOrId = driverNameOrId?.trim()?.uppercase() ?: return DRIVER
-            return when {
-                nameOrId.contains("BEBE") || nameOrId.contains("BONO") || nameOrId.contains("DECKY") ||
-                nameOrId in listOf("094723", "208324", "189924") -> STAFF
-
-                nameOrId.contains("HAMIK") || nameOrId.contains("ADAM") || nameOrId.contains("BILLY") ||
-                nameOrId.contains("RIVALDI") || nameOrId.contains("ABRILIAN") ||
-                nameOrId in listOf("E01762", "E01763", "E02458", "E02459", "E02460") -> DRIVER
-
-                nameOrId.contains("RIZAL") || nameOrId.contains("ADI") || nameOrId.contains("WAHYU") ||
-                nameOrId.contains("REZZA") || nameOrId.contains("AVRINO") || nameOrId.contains("AGUS") ||
-                nameOrId in listOf("E02461", "E02462", "E02463", "E02466", "E02467", "E02468") -> KENEK
-
-                nameOrId.contains("NICO") || nameOrId.contains("DEO") || nameOrId.contains("RIO") ||
-                nameOrId in listOf("E02464", "E02465", "E02469") -> LP
-
-                else -> DRIVER
-            }
+            return UNKNOWN
         }
     }
 }
@@ -67,6 +50,7 @@ enum class MenuItemId {
     LOG_HARIAN,
     ARSIP_PENGIRIMAN,
     PENGATURAN,
+    SERVICE_AC,
     KELUAR
 }
 
@@ -84,7 +68,7 @@ object RolePermissionMatrix {
     /**
      * MATRIKS HAK AKSES PER-ROLE:
      * Staff  : Status armada, Catat service, Laporan, Pengaturan, Keluar
-     * Driver : Status armada, Catatan driver, Pengajuan Ban/aks, Keluar
+     * Driver : Status armada, Catatan driver, Pengajuan Ban/aks, Service AC, Keluar
      * Kenek  : Status armada, Log Harian, Arsip Pengiriman, Keluar
      * LP     : Status armada, Keluar
      */
@@ -100,6 +84,7 @@ object RolePermissionMatrix {
             MenuItemId.STATUS_ARMADA,
             MenuItemId.CATATAN_DRIVER,
             MenuItemId.PENGAJUAN_BAN,
+            MenuItemId.SERVICE_AC,
             MenuItemId.KELUAR
         ),
         AppRole.KENEK to listOf(
@@ -176,6 +161,14 @@ object RolePermissionMatrix {
             destinationScreen = "pengajuan"
         ),
         DashboardMenuItem(
+            id = MenuItemId.SERVICE_AC,
+            title = "Service AC",
+            description = "Catat KM service AC armada",
+            icon = Icons.Default.AcUnit,
+            circleBgColor = Color(0xFF0284C7),
+            destinationScreen = "service_ac"
+        ),
+        DashboardMenuItem(
             id = MenuItemId.ARSIP_PENGIRIMAN,
             title = "Arsip Pengiriman",
             description = "Simpan arsip bukti kirim",
@@ -204,6 +197,9 @@ object RolePermissionMatrix {
     fun isScreenAllowed(roleString: String?, screenRoute: String, driverNameOrId: String? = null): Boolean {
         if (screenRoute == "dashboard") return true
         val role = AppRole.resolveRole(roleString, driverNameOrId)
+        if (screenRoute == "service_ac") {
+            return role == AppRole.DRIVER
+        }
         val allowedMenuIds = ROLE_MENU_MAP[role] ?: ROLE_MENU_MAP[AppRole.UNKNOWN]!!
         val targetMenuItem = ALL_MENU_ITEMS.find { it.destinationScreen == screenRoute }
         return targetMenuItem == null || allowedMenuIds.contains(targetMenuItem.id)
