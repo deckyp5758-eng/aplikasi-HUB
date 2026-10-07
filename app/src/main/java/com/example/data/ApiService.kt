@@ -197,6 +197,18 @@ interface ApiService {
         @Query("sheetId") sheetId: String? = null
     ): SubmitServiceAcApiResponse
 
+    @GET("exec")
+    suspend fun getKontakVendor(
+        @Query("action") action: String = "getKontakVendor",
+        @Query("spreadsheetId") spreadsheetId: String? = null
+    ): VendorPicApiResponse
+
+    @GET("exec")
+    suspend fun setupSheetKontakVendor(
+        @Query("action") action: String = "setupSheetKontakVendor",
+        @Query("spreadsheetId") spreadsheetId: String? = null
+    ): CommonWriteApiResponse
+
     @GET
     suspend fun getLatestGitHubRelease(
         @Url url: String = "https://api.github.com/repos/deckyp5758-eng/aplikasi-HUB/releases/latest"
@@ -654,6 +666,23 @@ data class ServiceAcApiResponse(
     val success: Boolean? = true,
     val message: String? = null,
     val data: List<ServiceAcApiItem>? = null
+)
+
+data class VendorPicApiItem(
+    val idVendor: String = "",
+    val namaVendor: String = "",
+    val kategori: String = "SERVIS MESIN",
+    val armadaHandle: String = "ALL",
+    val namaPic: String = "",
+    val noWhatsapp: String = "",
+    val alamatBengkel: String = "",
+    val status: String = "AKTIF"
+)
+
+data class VendorPicApiResponse(
+    val success: Boolean? = true,
+    val message: String? = null,
+    val data: List<VendorPicApiItem>? = null
 )
 
 

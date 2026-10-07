@@ -217,6 +217,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
+    // Kontak Vendor PIC State
+    private val _kontakVendorList = MutableStateFlow<List<VendorPicApiItem>>(emptyList())
+    val kontakVendorList: StateFlow<List<VendorPicApiItem>> = _kontakVendorList.asStateFlow()
+
     fun clearToastMessage() {
         _toastMessage.value = null
     }
@@ -300,6 +304,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 checkAkiAgeAndNotify(_banList.value)
                 try {
                     _serviceAcList.value = repository.getServiceAc()
+                } catch (_: Exception) {}
+                try {
+                    _kontakVendorList.value = repository.getKontakVendorList(forceRefresh = isPullToRefresh)
                 } catch (_: Exception) {}
                 _dataErrorMessage.value = null
             } catch (e: Exception) {
@@ -1521,5 +1528,17 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         _serviceAcKmInput.value = ""
         _serviceAcError.value = null
         _serviceAcSuccess.value = null
+    }
+
+    suspend fun getVendorForArmada(armadaId: String, isAcService: Boolean = false): VendorPicApiItem {
+        return repository.getVendorForArmada(armadaId, isAcService)
+    }
+
+    fun setupSheetKontakVendor(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.setupSheetKontakVendorRemote()
+            result.onSuccess { msg -> onResult(true, msg) }
+                .onFailure { err -> onResult(false, err.message ?: "Gagal") }
+        }
     }
 }

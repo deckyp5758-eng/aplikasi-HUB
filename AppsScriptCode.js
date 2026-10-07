@@ -172,6 +172,10 @@ function doGet(e) {
       return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
     } else if (action === "getServiceAC" || action === "getServiceAc" || action === "get_service_ac") {
       return jsonResponse({ success: true, data: getServiceAC(ss, sheetMap) });
+    } else if (action === "getKontakVendor" || action === "get_kontak_vendor" || action === "getVendor") {
+      return jsonResponse({ success: true, data: getKontakVendor(ss, sheetMap) });
+    } else if (action === "setupSheetKontakVendor" || action === "setup_sheet_kontak_vendor") {
+      return jsonResponse(setupSheetKontakVendor(ss));
     } else if (action === "cleanupLogFiles" || action === "cleanup_log_files" || action === "cleanupOldLogs") {
       var daysParam = Number(e.parameter.days || 7);
       return jsonResponse(cleanupOldLogHarianFiles(daysParam));
@@ -272,6 +276,10 @@ function doPost(e) {
       return jsonResponse({ success: true, data: getAiKnowledge(ss, sheetMap) });
     } else if (action === "getServiceAC" || action === "getServiceAc" || action === "get_service_ac") {
       return jsonResponse({ success: true, data: getServiceAC(ss, sheetMap) });
+    } else if (action === "getKontakVendor" || action === "get_kontak_vendor" || action === "getVendor") {
+      return jsonResponse({ success: true, data: getKontakVendor(ss, sheetMap) });
+    } else if (action === "setupSheetKontakVendor" || action === "setup_sheet_kontak_vendor") {
+      return jsonResponse(setupSheetKontakVendor(ss));
     } else if (action === "cleanupLogFiles" || action === "cleanup_log_files" || action === "cleanupOldLogs") {
       var daysParam = Number(contents.days || 7);
       return jsonResponse(cleanupOldLogHarianFiles(daysParam));
@@ -1538,6 +1546,161 @@ function setupSheetServiceAC(ss) {
     sheet.getRange(2, 9, numRows, 1).setNumberFormat("yyyy-mm-dd");
     sheet.getRange(2, 10, numRows, 2).setNumberFormat("#,##0");
   }
+}
+
+// -------------------------------------------------------------
+// SHEET KONTAK VENDOR PIC (HINO, DAIHATSU, PRIMA AC)
+// -------------------------------------------------------------
+function setupSheetKontakVendor(ss) {
+  if (!ss) ss = getSpreadsheet();
+  
+  var sheet = ss.getSheetByName("KONTAK_VENDOR") || ss.insertSheet("KONTAK_VENDOR");
+  var headers = [[
+    "ID VENDOR", 
+    "NAMA VENDOR / BENGKEL", 
+    "KATEGORI", 
+    "ARMADA HANDLE", 
+    "NAMA PIC", 
+    "NO WHATSAPP", 
+    "ALAMAT BENGKEL", 
+    "STATUS"
+  ]];
+  
+  applyHeaderStyle(sheet, headers, "#1E3A8A");
+  
+  // Jika sheet baru atau hanya ada baris header, isi data awal
+  if (sheet.getLastRow() <= 1) {
+    var initialData = [
+      [
+        "VND-HINO", 
+        "Bengkel Resmi Hino Motors Kediri", 
+        "SERVIS MESIN", 
+        "HK01, HK02, HK04", 
+        "Service Advisor Hino", 
+        "6281234567890", 
+        "Jl. Mayor Bismo, Kediri", 
+        "AKTIF"
+      ],
+      [
+        "VND-DAIHATSU", 
+        "Bengkel Resmi Daihatsu Kediri", 
+        "SERVIS MESIN", 
+        "HK03", 
+        "Service Advisor Daihatsu", 
+        "6281234567891", 
+        "Jl. Joyoboyo, Kediri", 
+        "AKTIF"
+      ],
+      [
+        "VND-PRIMA-AC", 
+        "Prima AC Mobil Kediri", 
+        "SERVIS AC", 
+        "ALL", 
+        "PIC Prima AC", 
+        "6281234567892", 
+        "Jl. Kilisuci, Kediri", 
+        "AKTIF"
+      ]
+    ];
+    sheet.getRange(2, 1, initialData.length, headers[0].length).setValues(initialData);
+  }
+  
+  var maxRows = Math.max(sheet.getLastRow(), 10);
+  var numRows = maxRows - 1;
+  if (numRows > 0) {
+    sheet.getRange(2, 6, numRows, 1).setNumberFormat("@"); // Format teks agar angka nol / 62 tidak rusak
+    sheet.getRange(2, 1, numRows, 1).setHorizontalAlignment("center");
+    sheet.getRange(2, 3, numRows, 2).setHorizontalAlignment("center");
+    sheet.getRange(2, 6, numRows, 1).setHorizontalAlignment("center");
+    sheet.getRange(2, 8, numRows, 1).setHorizontalAlignment("center");
+  }
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+  
+  return {
+    success: true,
+    message: "Sheet 'KONTAK_VENDOR' dan tabel master PIC berhasil dibuat & disiapkan di Google Spreadsheet!"
+  };
+}
+
+function getKontakVendor(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  
+  var sheet = getSheetByNameFromMap(ss, sheetMap, "KONTAK_VENDOR") ||
+              getSheetByNameFromMap(ss, sheetMap, "Kontak Vendor") ||
+              getSheetByNameFromMap(ss, sheetMap, "KONTAK VENDOR") ||
+              getSheetByNameFromMap(ss, sheetMap, "VENDOR_PIC") ||
+              getSheetByNameFromMap(ss, sheetMap, "VENDOR");
+              
+  if (!sheet) {
+    try {
+      setupSheetKontakVendor(ss);
+      sheet = ss.getSheetByName("KONTAK_VENDOR");
+    } catch(e) {}
+  }
+  
+  var vendorList = [];
+  if (sheet) {
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow >= 2 && lastCol >= 6) {
+      var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+      for (var i = 0; i < data.length; i++) {
+        var row = data[i];
+        if (row[0] || row[1] || row[4]) {
+          vendorList.push({
+            idVendor: String(row[0] || ("VND-" + (i + 1))).trim(),
+            namaVendor: String(row[1] || "").trim(),
+            kategori: String(row[2] || "SERVIS MESIN").trim(),
+            armadaHandle: String(row[3] || "ALL").trim(),
+            namaPic: String(row[4] || "").trim(),
+            noWhatsapp: String(row[5] || "").replace(/[^0-9]/g, "").trim(),
+            alamatBengkel: String(row[6] || "").trim(),
+            status: String(row[7] || "AKTIF").trim()
+          });
+        }
+      }
+    }
+  }
+  
+  // Fallback default jika data sheet kosong
+  if (vendorList.length === 0) {
+    vendorList = [
+      {
+        idVendor: "VND-HINO",
+        namaVendor: "Bengkel Resmi Hino Motors Kediri",
+        kategori: "SERVIS MESIN",
+        armadaHandle: "HK01, HK02, HK04",
+        namaPic: "Service Advisor Hino",
+        noWhatsapp: "6281234567890",
+        alamatBengkel: "Jl. Mayor Bismo, Kediri",
+        status: "AKTIF"
+      },
+      {
+        idVendor: "VND-DAIHATSU",
+        namaVendor: "Bengkel Resmi Daihatsu Kediri",
+        kategori: "SERVIS MESIN",
+        armadaHandle: "HK03",
+        namaPic: "Service Advisor Daihatsu",
+        noWhatsapp: "6281234567891",
+        alamatBengkel: "Jl. Joyoboyo, Kediri",
+        status: "AKTIF"
+      },
+      {
+        idVendor: "VND-PRIMA-AC",
+        namaVendor: "Prima AC Mobil Kediri",
+        kategori: "SERVIS AC",
+        armadaHandle: "ALL",
+        namaPic: "PIC Prima AC",
+        noWhatsapp: "6281234567892",
+        alamatBengkel: "Jl. Kilisuci, Kediri",
+        status: "AKTIF"
+      }
+    ];
+  }
+  
+  return vendorList;
 }
 
 // ============================================
@@ -3230,14 +3393,16 @@ function setupAllSheets(ss) {
     setupSheetBan(ss);
     setupSheetAki(ss);
     setupSheetSparepart(ss);
+    setupSheetServiceAC(ss);
+    setupSheetKontakVendor(ss);
     
     try {
-      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart) telah berhasil dirapikan secara instan!");
+      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor) telah berhasil dirapikan secara instan!");
     } catch(uiErr) {
       Logger.log("Setup All Sheets Completed!");
     }
     
-    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart) telah berhasil dirapikan secara instan!" };
+    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor) telah berhasil dirapikan secara instan!" };
   } catch(e) {
     return { success: false, message: "Gagal memproses setupAllSheets: " + e.toString() };
   }

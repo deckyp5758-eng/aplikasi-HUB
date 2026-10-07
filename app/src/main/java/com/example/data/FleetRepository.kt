@@ -1944,6 +1944,105 @@ ATURAN KETAT:
         )
         return Result.success(localResp)
     }
+
+    private val defaultVendors = listOf(
+        VendorPicApiItem(
+            idVendor = "VND-HINO",
+            namaVendor = "Bengkel Resmi Hino Motors Kediri",
+            kategori = "SERVIS MESIN",
+            armadaHandle = "HK01, HK02, HK04",
+            namaPic = "Service Advisor Hino",
+            noWhatsapp = "6281234567890",
+            alamatBengkel = "Jl. Mayor Bismo, Kediri",
+            status = "AKTIF"
+        ),
+        VendorPicApiItem(
+            idVendor = "VND-DAIHATSU",
+            namaVendor = "Bengkel Resmi Daihatsu Kediri",
+            kategori = "SERVIS MESIN",
+            armadaHandle = "HK03",
+            namaPic = "Service Advisor Daihatsu",
+            noWhatsapp = "6281234567891",
+            alamatBengkel = "Jl. Joyoboyo, Kediri",
+            status = "AKTIF"
+        ),
+        VendorPicApiItem(
+            idVendor = "VND-PRIMA-AC",
+            namaVendor = "Prima AC Mobil Kediri",
+            kategori = "SERVIS AC",
+            armadaHandle = "ALL",
+            namaPic = "PIC Prima AC",
+            noWhatsapp = "6281234567892",
+            alamatBengkel = "Jl. Kilisuci, Kediri",
+            status = "AKTIF"
+        )
+    )
+
+    private var cachedVendors: List<VendorPicApiItem>? = null
+    private var vendorCacheTimestamp: Long = 0L
+    private val VENDOR_CACHE_TTL = 300_000L // 5 minutes TTL
+
+    suspend fun getKontakVendorList(forceRefresh: Boolean = false): List<VendorPicApiItem> {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh && cachedVendors != null && (now - vendorCacheTimestamp < VENDOR_CACHE_TTL)) {
+            return cachedVendors!!
+        }
+        return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val response = service.getKontakVendor(spreadsheetId = prefs.googleSheetId)
+                if (response.success == true && !response.data.isNullOrEmpty()) {
+                    cachedVendors = response.data
+                    vendorCacheTimestamp = now
+                    response.data
+                } else {
+                    cachedVendors ?: defaultVendors
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Notice fetching vendor list: ${e.message}")
+                cachedVendors ?: defaultVendors
+            }
+        } else {
+            cachedVendors ?: defaultVendors
+        }
+    }
+
+    suspend fun getVendorForArmada(armadaId: String, isAcService: Boolean = false): VendorPicApiItem {
+        val vendors = getKontakVendorList()
+        val cleanArmada = armadaId.trim().uppercase()
+        if (isAcService) {
+            return vendors.firstOrNull { it.kategori.contains("AC", ignoreCase = true) }
+                ?: defaultVendors[2]
+        }
+        // Servis Mesin: Cocokkan armadaHandle
+        val matchingVendor = vendors.firstOrNull { vendor ->
+            !vendor.kategori.contains("AC", ignoreCase = true) &&
+            vendor.armadaHandle.uppercase().split(",", " ").map { it.trim() }.contains(cleanArmada)
+        }
+        return matchingVendor ?: if (cleanArmada.contains("HK03") || cleanArmada.contains("HK 03") || cleanArmada.contains("03")) {
+            vendors.firstOrNull { it.idVendor.contains("DAIHATSU", ignoreCase = true) || it.namaVendor.contains("DAIHATSU", ignoreCase = true) } ?: defaultVendors[1]
+        } else {
+            vendors.firstOrNull { it.idVendor.contains("HINO", ignoreCase = true) || it.namaVendor.contains("HINO", ignoreCase = true) } ?: defaultVendors[0]
+        }
+    }
+
+    suspend fun setupSheetKontakVendorRemote(): Result<String> {
+        return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val resp = service.setupSheetKontakVendor(spreadsheetId = prefs.googleSheetId)
+                if (resp.success) {
+                    Result.success(resp.message ?: "Sheet KONTAK_VENDOR berhasil dibuat di Spreadsheet!")
+                } else {
+                    Result.failure(Exception(resp.message ?: "Gagal membuat sheet KONTAK_VENDOR."))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        } else {
+            Result.failure(Exception("Google Sheets mode belum aktif atau URL Apps Script kosong."))
+        }
+    }
 }
 
 data class GeminiDirectResponse(
