@@ -9,6 +9,7 @@
 
 var DEFAULT_SPREADSHEET_ID = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw";
 var GID_ARMADA = 1850941825;
+var GID_FORM_ARMADA = 906590826;
 var GID_AI_DATA = 888604592;
 var GID_PENGAJUAN = 1517362778;
 var GID_CATATAN_DRIVER = 1562754278;
@@ -161,6 +162,15 @@ function doGet(e) {
     } else if (action === "getArmada" || action === "getKirPajak") {
       return jsonResponse({ success: true, armada: getArmada(ss, sheetMap, e, null) });
     } else if (action === "processFormArmada" || action === "process_form_armada") {
+      var authParams = (e && e.parameter) ? e.parameter : {};
+      var authRes = validateLogin(authParams, ss, sheetMap);
+      if (!authRes || !authRes.success) {
+        return jsonResponse({ success: false, message: "Autentikasi gagal: ID/Username dan PIN wajib diisi untuk memproses Form Armada." });
+      }
+      var role = String(authRes.role || "").trim().toUpperCase();
+      if (role !== "STAFF" && role !== "ADMIN") {
+        return jsonResponse({ success: false, message: "Akses ditolak: Hanya peran STAFF atau ADMIN yang diizinkan memproses master armada." });
+      }
       return jsonResponse(processFormArmada(ss, sheetMap));
     } else if (action === "getLogs") {
       return jsonResponse({ success: true, logs: getLogs(ss, 100, sheetMap) });
@@ -273,6 +283,15 @@ function doPost(e) {
     } else if (action === "getArmada" || action === "getKirPajak") {
       return jsonResponse({ success: true, armada: getArmada(ss, sheetMap, e, contents) });
     } else if (action === "processFormArmada" || action === "process_form_armada") {
+      var authParams = contents || (e && e.parameter ? e.parameter : {});
+      var authRes = validateLogin(authParams, ss, sheetMap);
+      if (!authRes || !authRes.success) {
+        return jsonResponse({ success: false, message: "Autentikasi gagal: ID/Username dan PIN wajib diisi untuk memproses Form Armada." });
+      }
+      var role = String(authRes.role || "").trim().toUpperCase();
+      if (role !== "STAFF" && role !== "ADMIN") {
+        return jsonResponse({ success: false, message: "Akses ditolak: Hanya peran STAFF atau ADMIN yang diizinkan memproses master armada." });
+      }
       return jsonResponse(processFormArmada(ss, sheetMap));
     } else if (action === "getLogs") {
       return jsonResponse({ success: true, logs: getLogs(ss, 100, sheetMap) });
@@ -470,11 +489,15 @@ function getArmada(ss, sheetMap, e, contents) {
   var alasanNonaktifCol = 15;
 
   var includeNonActive = false;
-  if (e && e.parameter && (e.parameter.includeNonActive === "true" || e.parameter.role === "ADMIN" || e.parameter.role === "STAFF")) {
-    includeNonActive = true;
-  }
-  if (contents && (contents.includeNonActive || contents.role === "ADMIN" || contents.role === "STAFF")) {
-    includeNonActive = true;
+  var authParam = contents || (e && e.parameter ? e.parameter : null);
+  if (authParam && (authParam.includeNonActive === "true" || authParam.includeNonActive === true)) {
+    var authRes = validateLogin(authParam, ss, sheetMap);
+    if (authRes && authRes.success) {
+      var userRole = String(authRes.role || "").trim().toUpperCase();
+      if (userRole === "STAFF" || userRole === "ADMIN") {
+        includeNonActive = true;
+      }
+    }
   }
 
   if (sheet) {
@@ -542,13 +565,13 @@ function processFormArmada(ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
   
-  var sheet = getSheetByGid(sheetMap, 906590826) || 
-              getSheetByGid(ss, 906590826) || 
+  var sheet = getSheetByGid(sheetMap, GID_FORM_ARMADA) || 
+              getSheetByGid(ss, GID_FORM_ARMADA) || 
               getSheetByNameFromMap(ss, sheetMap, "Form Armada") ||
               getSheetByNameFromMap(ss, sheetMap, "FORM ARMADA");
               
   if (!sheet) {
-    return { success: false, message: "Tab 'Form Armada' (GID 906590826) tidak ditemukan." };
+    return { success: false, message: "Tab 'Form Armada' (GID " + GID_FORM_ARMADA + ") tidak ditemukan." };
   }
 
   var armadaSheet = getSheetByGid(sheetMap, GID_ARMADA) || 
@@ -611,7 +634,8 @@ function processFormArmada(ss, sheetMap) {
             }
           }
 
-          var newArmadaRow = armadaRows.length + 1;
+          SpreadsheetApp.flush();
+          var newArmadaRow = armadaSheet.getLastRow() + 1;
           var formulaF = '=IF(D' + newArmadaRow + '="","",D' + newArmadaRow + '+E' + newArmadaRow + ')';
           var formulaG = '=IF(F' + newArmadaRow + '="","",F' + newArmadaRow + '-C' + newArmadaRow + ')';
           var formulaH = '=IF(G' + newArmadaRow + '="","",IF(G' + newArmadaRow + '<=0,"SERVIS SEKARANG",IF(G' + newArmadaRow + '<=1000,"⚠️ SERVICE <1000 KM","AMAN")))';
@@ -636,6 +660,7 @@ function processFormArmada(ss, sheetMap) {
           ];
 
           armadaSheet.appendRow(rowValues);
+          SpreadsheetApp.flush();
           successFlag = true;
           pesanProses = "Armada " + armadaId + " berhasil ditambahkan dan diaktifkan.";
 
@@ -656,14 +681,23 @@ function processFormArmada(ss, sheetMap) {
             throw new Error("Armada ID '" + armadaId + "' tidak ditemukan di tab Armada.");
           }
 
-          armadaSheet.getRange(foundRow, 14).setValue("NONAKTIF");
-          armadaSheet.getRange(foundRow, 15).setValue(nowTimestamp);
-          if (alasan) {
-            armadaSheet.getRange(foundRow, 16).setValue(alasan);
-          }
+          var currentStatus = (armadaRows[foundRow - 1].length > 13 && armadaRows[foundRow - 1][13] !== undefined && armadaRows[foundRow - 1][13] !== null)
+            ? String(armadaRows[foundRow - 1][13]).trim().toUpperCase()
+            : "AKTIF";
 
-          successFlag = true;
-          pesanProses = "Armada " + armadaId + " berhasil dinonaktifkan tanpa menghapus histori.";
+          if (currentStatus === "NONAKTIF") {
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " sudah dalam status NONAKTIF (tidak ada perubahan).";
+          } else {
+            armadaSheet.getRange(foundRow, 14).setValue("NONAKTIF");
+            armadaSheet.getRange(foundRow, 15).setValue(nowTimestamp);
+            if (alasan) {
+              armadaSheet.getRange(foundRow, 16).setValue(alasan);
+            }
+            SpreadsheetApp.flush();
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " berhasil dinonaktifkan tanpa menghapus histori.";
+          }
 
         } else if (aksi === "AKTIFKAN_KEMBALI") {
           if (!armadaId) throw new Error("Armada ID wajib diisi untuk pengaktifan kembali.");
@@ -682,14 +716,23 @@ function processFormArmada(ss, sheetMap) {
             throw new Error("Armada ID '" + armadaId + "' tidak ditemukan di tab Armada.");
           }
 
-          armadaSheet.getRange(foundRow, 14).setValue("AKTIF");
-          armadaSheet.getRange(foundRow, 15).setValue("");
-          if (alasan) {
-            armadaSheet.getRange(foundRow, 16).setValue(alasan);
-          }
+          var currentStatus = (armadaRows[foundRow - 1].length > 13 && armadaRows[foundRow - 1][13] !== undefined && armadaRows[foundRow - 1][13] !== null)
+            ? String(armadaRows[foundRow - 1][13]).trim().toUpperCase()
+            : "AKTIF";
 
-          successFlag = true;
-          pesanProses = "Armada " + armadaId + " berhasil diaktifkan kembali.";
+          if (currentStatus === "AKTIF" || currentStatus === "") {
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " sudah dalam status AKTIF (tidak ada perubahan).";
+          } else {
+            armadaSheet.getRange(foundRow, 14).setValue("AKTIF");
+            armadaSheet.getRange(foundRow, 15).setValue("");
+            if (alasan) {
+              armadaSheet.getRange(foundRow, 16).setValue(alasan);
+            }
+            SpreadsheetApp.flush();
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " berhasil diaktifkan kembali.";
+          }
 
         } else {
           throw new Error("Aksi tidak dikenal: '" + aksi + "'. Gunakan TAMBAH, NONAKTIFKAN, atau AKTIFKAN_KEMBALI.");
@@ -3723,14 +3766,15 @@ function setupAllSheets(ss) {
     setupSheetSparepart(ss);
     setupSheetServiceAC(ss);
     setupSheetKontakVendor(ss);
+    setupSheetFormArmada(ss);
     
     try {
-      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor) telah berhasil dirapikan secara instan!");
+      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor, Form Armada) telah berhasil dirapikan secara instan!");
     } catch(uiErr) {
       Logger.log("Setup All Sheets Completed!");
     }
     
-    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor) telah berhasil dirapikan secara instan!" };
+    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor, Form Armada) telah berhasil dirapikan secara instan!" };
   } catch(e) {
     return { success: false, message: "Gagal memproses setupAllSheets: " + e.toString() };
   }
@@ -3943,5 +3987,79 @@ function applyGridAndResize(sheet, colCount, maxRows) {
   var dataRange = sheet.getRange(1, 1, maxRows, colCount);
   dataRange.setBorder(true, true, true, true, true, true, "#CBD5E1", SpreadsheetApp.BorderStyle.SOLID);
 }
+
+// -------------------------------------------------------------
+// 8. SHEET FORM ARMADA (KONTROL MASTER ARMADA OTOMATIS)
+// -------------------------------------------------------------
+function setupSheetFormArmada(ss) {
+  if (!ss) ss = getSpreadsheet();
+  var sheet = ss.getSheetByName("Form Armada") || ss.getSheetByName("FORM ARMADA");
+  if (!sheet) {
+    sheet = ss.insertSheet("Form Armada");
+  }
+  var headers = [["Aksi", "Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "Alasan / Keterangan", "Status Proses", "Waktu Proses", "Pesan Proses"]];
+  
+  applyHeaderStyle(sheet, headers, "#1E293B");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+
+  sheet.getRange(2, 4, numRows, 3).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 3).setHorizontalAlignment("center");
+  sheet.getRange(2, 8, numRows, 2).setHorizontalAlignment("center");
+
+  // Validasi Dropdown Aksi (Kolom A)
+  var ruleAksi = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["TAMBAH", "NONAKTIFKAN", "AKTIFKAN_KEMBALI"], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 1, numRows, 1).setDataValidation(ruleAksi);
+
+  // Validasi Dropdown Status Proses (Kolom H)
+  var ruleStatus = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["MENUNGGU", "DIPROSES", "SELESAI", "GAGAL"], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 8, numRows, 1).setDataValidation(ruleStatus);
+
+  // Conditional Formatting Status Proses (Kolom H)
+  var statusRange = sheet.getRange(2, 8, numRows, 1);
+  var ruleMenunggu = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("MENUNGGU").setBackground("#FEF3C7").setFontColor("#92400E").setBold(true).setRanges([statusRange]).build();
+  var ruleDiproses = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("DIPROSES").setBackground("#DBEAFE").setFontColor("#1E40AF").setBold(true).setRanges([statusRange]).build();
+  var ruleSelesai = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("SELESAI").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  var ruleGagal = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("GAGAL").setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true).setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleMenunggu, ruleDiproses, ruleSelesai, ruleGagal]);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+/**
+ * Trigger otomatis pemrosesan Form Armada (Time-driven setiap 5 menit)
+ */
+function setupFormArmadaTrigger() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "autoProcessFormArmada") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+    ScriptApp.newTrigger("autoProcessFormArmada")
+      .timeBased()
+      .everyMinutes(5)
+      .create();
+    return { success: true, message: "Trigger autoProcessFormArmada berhasil dipasang (berjalan otomatis setiap 5 menit)." };
+  } catch (err) {
+    return { success: false, message: "Gagal memasang trigger Form Armada: " + err.toString() };
+  }
+}
+
+function autoProcessFormArmada() {
+  var res = processFormArmada();
+  if (res && res.processedCount > 0) {
+    Logger.log("autoProcessFormArmada: " + JSON.stringify(res));
+  }
+  return res;
+}
+
 
 

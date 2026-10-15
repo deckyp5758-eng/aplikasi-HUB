@@ -9,6 +9,7 @@
 
 var DEFAULT_SPREADSHEET_ID = "1nCxvNqo7d0zRdLDAxWorFGOXOxfhr9S1x1man9O9xrw";
 var GID_ARMADA = 1850941825;
+var GID_FORM_ARMADA = 906590826;
 var GID_AI_DATA = 888604592;
 var GID_PENGAJUAN = 1517362778;
 var GID_CATATAN_DRIVER = 1562754278;
@@ -159,7 +160,18 @@ function doGet(e) {
     } else if (action === "getDrivers") {
       return jsonResponse({ success: true, drivers: getDrivers(ss, sheetMap) });
     } else if (action === "getArmada" || action === "getKirPajak") {
-      return jsonResponse({ success: true, armada: getArmada(ss, sheetMap) });
+      return jsonResponse({ success: true, armada: getArmada(ss, sheetMap, e, null) });
+    } else if (action === "processFormArmada" || action === "process_form_armada") {
+      var authParams = (e && e.parameter) ? e.parameter : {};
+      var authRes = validateLogin(authParams, ss, sheetMap);
+      if (!authRes || !authRes.success) {
+        return jsonResponse({ success: false, message: "Autentikasi gagal: ID/Username dan PIN wajib diisi untuk memproses Form Armada." });
+      }
+      var role = String(authRes.role || "").trim().toUpperCase();
+      if (role !== "STAFF" && role !== "ADMIN") {
+        return jsonResponse({ success: false, message: "Akses ditolak: Hanya peran STAFF atau ADMIN yang diizinkan memproses master armada." });
+      }
+      return jsonResponse(processFormArmada(ss, sheetMap));
     } else if (action === "getLogs") {
       return jsonResponse({ success: true, logs: getLogs(ss, 100, sheetMap) });
     } else if (action === "getBanArmada") {
@@ -176,9 +188,15 @@ function doGet(e) {
       return jsonResponse({ success: true, data: getKontakVendor(ss, sheetMap) });
     } else if (action === "setupSheetKontakVendor" || action === "setup_sheet_kontak_vendor") {
       return jsonResponse(setupSheetKontakVendor(ss));
-    } else if (action === "cleanupLogFiles" || action === "cleanup_log_files" || action === "cleanupOldLogs") {
+    } else if (action === "cleanupLogFiles" || action === "cleanup_log_files") {
       var daysParam = Number(e.parameter.days || 7);
       return jsonResponse(cleanupOldLogHarianFiles(daysParam));
+    } else if (action === "cleanupLogRows" || action === "cleanup_log_rows") {
+      var daysParam = Number(e.parameter.days || 7);
+      return jsonResponse(cleanupOldLogHarianRows(daysParam, ss, sheetMap));
+    } else if (action === "cleanupLogAll" || action === "cleanup_log_all" || action === "cleanupOldLogs") {
+      var daysParam = Number(e.parameter.days || 7);
+      return jsonResponse(cleanupOldLogHarianAll(daysParam, ss, sheetMap));
     } else if (action === "setupCleanupTrigger" || action === "setup_cleanup_trigger") {
       return jsonResponse(setupAutoCleanupTrigger());
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
@@ -263,7 +281,18 @@ function doPost(e) {
     } else if (action === "getDrivers") {
       return jsonResponse({ success: true, drivers: getDrivers(ss, sheetMap) });
     } else if (action === "getArmada" || action === "getKirPajak") {
-      return jsonResponse({ success: true, armada: getArmada(ss, sheetMap) });
+      return jsonResponse({ success: true, armada: getArmada(ss, sheetMap, e, contents) });
+    } else if (action === "processFormArmada" || action === "process_form_armada") {
+      var authParams = contents || (e && e.parameter ? e.parameter : {});
+      var authRes = validateLogin(authParams, ss, sheetMap);
+      if (!authRes || !authRes.success) {
+        return jsonResponse({ success: false, message: "Autentikasi gagal: ID/Username dan PIN wajib diisi untuk memproses Form Armada." });
+      }
+      var role = String(authRes.role || "").trim().toUpperCase();
+      if (role !== "STAFF" && role !== "ADMIN") {
+        return jsonResponse({ success: false, message: "Akses ditolak: Hanya peran STAFF atau ADMIN yang diizinkan memproses master armada." });
+      }
+      return jsonResponse(processFormArmada(ss, sheetMap));
     } else if (action === "getLogs") {
       return jsonResponse({ success: true, logs: getLogs(ss, 100, sheetMap) });
     } else if (action === "getBanArmada") {
@@ -280,9 +309,15 @@ function doPost(e) {
       return jsonResponse({ success: true, data: getKontakVendor(ss, sheetMap) });
     } else if (action === "setupSheetKontakVendor" || action === "setup_sheet_kontak_vendor") {
       return jsonResponse(setupSheetKontakVendor(ss));
-    } else if (action === "cleanupLogFiles" || action === "cleanup_log_files" || action === "cleanupOldLogs") {
+    } else if (action === "cleanupLogFiles" || action === "cleanup_log_files") {
       var daysParam = Number(contents.days || 7);
       return jsonResponse(cleanupOldLogHarianFiles(daysParam));
+    } else if (action === "cleanupLogRows" || action === "cleanup_log_rows") {
+      var daysParam = Number(contents.days || 7);
+      return jsonResponse(cleanupOldLogHarianRows(daysParam, ss, sheetMap));
+    } else if (action === "cleanupLogAll" || action === "cleanup_log_all" || action === "cleanupOldLogs") {
+      var daysParam = Number(contents.days || 7);
+      return jsonResponse(cleanupOldLogHarianAll(daysParam, ss, sheetMap));
     } else if (action === "setupCleanupTrigger" || action === "setup_cleanup_trigger") {
       return jsonResponse(setupAutoCleanupTrigger());
     } else if (action === "submitServiceAC" || action === "submitServiceAc" || action === "submit_service_ac") {
@@ -437,7 +472,7 @@ function getKirPajakMap(ss, sheetMap) {
   return map;
 }
 
-function getArmada(ss, sheetMap) {
+function getArmada(ss, sheetMap, e, contents) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
   var sheet = getSheetByGid(sheetMap, GID_ARMADA) || 
@@ -447,10 +482,23 @@ function getArmada(ss, sheetMap) {
   var kirMap = getKirPajakMap(ss, sheetMap);
   var armadaList = [];
 
-  // Foto profil armada disimpan pada kolom L (index 11).
-  // Foto gantungan service disimpan pada kolom M (index 12).
   var fotoProfileCol = 11;
   var fotoServiceCol = 12;
+  var statusOpCol = 13;
+  var tanggalNonaktifCol = 14;
+  var alasanNonaktifCol = 15;
+
+  var includeNonActive = false;
+  var authParam = contents || (e && e.parameter ? e.parameter : null);
+  if (authParam && (authParam.includeNonActive === "true" || authParam.includeNonActive === true)) {
+    var authRes = validateLogin(authParam, ss, sheetMap);
+    if (authRes && authRes.success) {
+      var userRole = String(authRes.role || "").trim().toUpperCase();
+      if (userRole === "STAFF" || userRole === "ADMIN") {
+        includeNonActive = true;
+      }
+    }
+  }
 
   if (sheet) {
     var data = sheet.getDataRange().getValues();
@@ -458,6 +506,14 @@ function getArmada(ss, sheetMap) {
       if (data[i][0]) {
         var id = String(data[i][0]).trim().toUpperCase();
         var nopol = data[i][1] ? String(data[i][1]).trim().toUpperCase() : "";
+        var statusOp = (data[i].length > statusOpCol && data[i][statusOpCol] !== undefined && data[i][statusOpCol] !== null && String(data[i][statusOpCol]).trim() !== "") 
+          ? String(data[i][statusOpCol]).trim().toUpperCase() 
+          : "AKTIF";
+
+        if (!includeNonActive && statusOp === "NONAKTIF") {
+          continue;
+        }
+
         var extra = kirMap[id] || kirMap[nopol] || {};
         var profileFoto = (data[i][fotoProfileCol] !== undefined && data[i][fotoProfileCol] !== null)
           ? String(data[i][fotoProfileCol] || "").trim()
@@ -494,12 +550,216 @@ function getArmada(ss, sheetMap) {
           pajak5Tahunan: extra.pajak5Tahunan || formatDateVal(data[i][7] || ""),
           fotoTruck: profileFoto,
           fotoService: serviceFoto,
-          fotoGantunganService: serviceFoto
+          fotoGantunganService: serviceFoto,
+          statusOperasional: statusOp,
+          tanggalNonaktif: data[i].length > tanggalNonaktifCol ? String(data[i][tanggalNonaktifCol] || "") : "",
+          alasanNonaktif: data[i].length > alasanNonaktifCol ? String(data[i][alasanNonaktifCol] || "") : ""
         });
       }
     }
   }
   return armadaList;
+}
+
+function processFormArmada(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  
+  var sheet = getSheetByGid(sheetMap, GID_FORM_ARMADA) || 
+              getSheetByGid(ss, GID_FORM_ARMADA) || 
+              getSheetByNameFromMap(ss, sheetMap, "Form Armada") ||
+              getSheetByNameFromMap(ss, sheetMap, "FORM ARMADA");
+              
+  if (!sheet) {
+    return { success: false, message: "Tab 'Form Armada' (GID " + GID_FORM_ARMADA + ") tidak ditemukan." };
+  }
+
+  var armadaSheet = getSheetByGid(sheetMap, GID_ARMADA) || 
+                    getSheetByGid(ss, GID_ARMADA) || 
+                    getSheetByNameFromMap(ss, sheetMap, "Armada") ||
+                    getSheetByNameFromMap(ss, sheetMap, "ARMADA");
+
+  if (!armadaSheet) {
+    return { success: false, message: "Tab 'Armada' tidak ditemukan." };
+  }
+
+  var dataRange = sheet.getDataRange();
+  var values = dataRange.getValues();
+  if (values.length <= 1) {
+    return { success: true, message: "Tidak ada data pada Form Armada untuk diproses." };
+  }
+
+  var tz = "Asia/Jakarta";
+  var processedCount = 0;
+  var errorsCount = 0;
+
+  for (var i = 1; i < values.length; i++) {
+    var row = values[i];
+    var statusProses = String(row[7] || "").trim().toUpperCase(); // Kolom H
+    
+    if (statusProses === "MENUNGGU") {
+      var rowIndex = i + 1;
+      sheet.getRange(rowIndex, 8).setValue("DIPROSES");
+      SpreadsheetApp.flush();
+
+      var aksi = String(row[0] || "").trim().toUpperCase(); // Kolom A
+      var armadaId = String(row[1] || "").trim().toUpperCase(); // Kolom B
+      var noPolisi = String(row[2] || "").trim().toUpperCase(); // Kolom C
+      var kmSaatIni = row[3] !== "" && row[3] !== null ? Number(row[3]) : NaN; // Kolom D
+      var kmServiceTerakhir = row[4] !== "" && row[4] !== null ? Number(row[4]) : NaN; // Kolom E
+      var intervalService = row[5] !== "" && row[5] !== null ? Number(row[5]) : 10000; // Kolom F
+      var alasan = String(row[6] || "").trim(); // Kolom G
+
+      var nowTimestamp = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm:ss");
+      var successFlag = false;
+      var pesanProses = "";
+
+      try {
+        if (aksi === "TAMBAH") {
+          if (!armadaId) throw new Error("Armada ID tidak boleh kosong.");
+          if (!noPolisi) throw new Error("No Polisi tidak boleh kosong.");
+          if (isNaN(kmSaatIni) || kmSaatIni < 0) throw new Error("KM Saat Ini harus berupa angka >= 0.");
+          if (isNaN(kmServiceTerakhir) || kmServiceTerakhir < 0) throw new Error("KM Service Terakhir harus berupa angka >= 0.");
+          if (isNaN(intervalService) || intervalService <= 0) intervalService = 10000;
+
+          var armadaRows = armadaSheet.getDataRange().getValues();
+          for (var r = 1; r < armadaRows.length; r++) {
+            var existingId = String(armadaRows[r][0] || "").trim().toUpperCase();
+            var existingNopol = String(armadaRows[r][1] || "").trim().toUpperCase();
+            if (existingId === armadaId) {
+              throw new Error("Armada ID '" + armadaId + "' sudah terdaftar di tab Armada.");
+            }
+            if (existingNopol === noPolisi) {
+              throw new Error("No Polisi '" + noPolisi + "' sudah digunakan oleh armada lain.");
+            }
+          }
+
+          SpreadsheetApp.flush();
+          var newArmadaRow = armadaSheet.getLastRow() + 1;
+          var formulaF = '=IF(D' + newArmadaRow + '="","",D' + newArmadaRow + '+E' + newArmadaRow + ')';
+          var formulaG = '=IF(F' + newArmadaRow + '="","",F' + newArmadaRow + '-C' + newArmadaRow + ')';
+          var formulaH = '=IF(G' + newArmadaRow + '="","",IF(G' + newArmadaRow + '<=0,"SERVIS SEKARANG",IF(G' + newArmadaRow + '<=1000,"⚠️ SERVICE <1000 KM","AMAN")))';
+
+          var rowValues = [
+            armadaId,           // A
+            noPolisi,           // B
+            kmSaatIni,          // C
+            kmServiceTerakhir,  // D
+            intervalService,    // E
+            formulaF,           // F
+            formulaG,           // G
+            formulaH,           // H
+            "",                 // I
+            "",                 // J
+            "",                 // K
+            "",                 // L
+            "",                 // M
+            "AKTIF",            // N
+            "",                 // O
+            alasan              // P
+          ];
+
+          armadaSheet.appendRow(rowValues);
+          SpreadsheetApp.flush();
+          successFlag = true;
+          pesanProses = "Armada " + armadaId + " berhasil ditambahkan dan diaktifkan.";
+
+        } else if (aksi === "NONAKTIFKAN") {
+          if (!armadaId) throw new Error("Armada ID wajib diisi untuk penonaktifan.");
+          
+          var armadaRows = armadaSheet.getDataRange().getValues();
+          var foundRow = -1;
+          for (var r = 1; r < armadaRows.length; r++) {
+            var existingId = String(armadaRows[r][0] || "").trim().toUpperCase();
+            if (existingId === armadaId) {
+              foundRow = r + 1;
+              break;
+            }
+          }
+
+          if (foundRow === -1) {
+            throw new Error("Armada ID '" + armadaId + "' tidak ditemukan di tab Armada.");
+          }
+
+          var currentStatus = (armadaRows[foundRow - 1].length > 13 && armadaRows[foundRow - 1][13] !== undefined && armadaRows[foundRow - 1][13] !== null)
+            ? String(armadaRows[foundRow - 1][13]).trim().toUpperCase()
+            : "AKTIF";
+
+          if (currentStatus === "NONAKTIF") {
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " sudah dalam status NONAKTIF (tidak ada perubahan).";
+          } else {
+            armadaSheet.getRange(foundRow, 14).setValue("NONAKTIF");
+            armadaSheet.getRange(foundRow, 15).setValue(nowTimestamp);
+            if (alasan) {
+              armadaSheet.getRange(foundRow, 16).setValue(alasan);
+            }
+            SpreadsheetApp.flush();
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " berhasil dinonaktifkan tanpa menghapus histori.";
+          }
+
+        } else if (aksi === "AKTIFKAN_KEMBALI") {
+          if (!armadaId) throw new Error("Armada ID wajib diisi untuk pengaktifan kembali.");
+
+          var armadaRows = armadaSheet.getDataRange().getValues();
+          var foundRow = -1;
+          for (var r = 1; r < armadaRows.length; r++) {
+            var existingId = String(armadaRows[r][0] || "").trim().toUpperCase();
+            if (existingId === armadaId) {
+              foundRow = r + 1;
+              break;
+            }
+          }
+
+          if (foundRow === -1) {
+            throw new Error("Armada ID '" + armadaId + "' tidak ditemukan di tab Armada.");
+          }
+
+          var currentStatus = (armadaRows[foundRow - 1].length > 13 && armadaRows[foundRow - 1][13] !== undefined && armadaRows[foundRow - 1][13] !== null)
+            ? String(armadaRows[foundRow - 1][13]).trim().toUpperCase()
+            : "AKTIF";
+
+          if (currentStatus === "AKTIF" || currentStatus === "") {
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " sudah dalam status AKTIF (tidak ada perubahan).";
+          } else {
+            armadaSheet.getRange(foundRow, 14).setValue("AKTIF");
+            armadaSheet.getRange(foundRow, 15).setValue("");
+            if (alasan) {
+              armadaSheet.getRange(foundRow, 16).setValue(alasan);
+            }
+            SpreadsheetApp.flush();
+            successFlag = true;
+            pesanProses = "Armada " + armadaId + " berhasil diaktifkan kembali.";
+          }
+
+        } else {
+          throw new Error("Aksi tidak dikenal: '" + aksi + "'. Gunakan TAMBAH, NONAKTIFKAN, atau AKTIFKAN_KEMBALI.");
+        }
+
+        if (successFlag) {
+          sheet.getRange(rowIndex, 8).setValue("SELESAI");
+          sheet.getRange(rowIndex, 9).setValue(nowTimestamp);
+          sheet.getRange(rowIndex, 10).setValue(pesanProses);
+          processedCount++;
+        }
+
+      } catch (err) {
+        errorsCount++;
+        sheet.getRange(rowIndex, 8).setValue("GAGAL");
+        sheet.getRange(rowIndex, 9).setValue(nowTimestamp);
+        sheet.getRange(rowIndex, 10).setValue(err.message || err.toString());
+      }
+    }
+  }
+
+  return {
+    success: true,
+    message: "Proses Form Armada selesai. Berhasil: " + processedCount + ", Gagal: " + errorsCount,
+    processedCount: processedCount,
+    errorsCount: errorsCount
+  };
 }
 
 function getLogs(ss, limit, sheetMap) {
@@ -1147,6 +1407,13 @@ function submitLog(contents, ss, sheetMap) {
       logSheet.appendRow(rowToAppend);
     }
 
+    // Pembersihan otomatis background saat submit log (jika belum dibersihkan hari ini)
+    try {
+      maybeAutoRunCleanup(ss, sheetMap);
+    } catch(autoCleanErr) {
+      Logger.log("Silent auto cleanup check: " + autoCleanErr.toString());
+    }
+
     var sisaKm = 1000;
     var serviceAlert = false;
     var threshold = 1000;
@@ -1704,12 +1971,112 @@ function getKontakVendor(ss, sheetMap) {
 }
 
 // ============================================
-// AUTO-CLEANUP LOG HARIAN FILES (> 7 HARI)
+// AUTO-CLEANUP LOG HARIAN FILES & SHEET ROWS (> 7 HARI)
 // ============================================
 
 /**
+ * Menghapus baris data log KM di Google Sheets (tab log_harian / GID_LOG_HARIAN)
+ * yang tanggal pencatatannya sudah lebih dari N hari (default 7 hari).
+ * Menggunakan pendekatan bulk rewrite in-place yang sangat cepat dan bebas timeout.
+ */
+function cleanupOldLogHarianRows(days, ss, sheetMap) {
+  var retentionDays = (typeof days === "number" && days > 0) ? days : 7;
+  var now = new Date();
+  var cutoffTime = now.getTime() - (retentionDays * 24 * 60 * 60 * 1000);
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+
+  var logSheet = getSheetByGid(sheetMap, GID_LOG_HARIAN) || 
+                 getSheetByGid(ss, GID_LOG_HARIAN) || 
+                 getSheetByNameFromMap(ss, sheetMap, "log_harian") || 
+                 getSheetByNameFromMap(ss, sheetMap, "LOG_HARIAN");
+
+  if (!logSheet) {
+    return {
+      success: false,
+      message: "Sheet log_harian tidak ditemukan.",
+      deletedRowsCount: 0
+    };
+  }
+
+  var lock = LockService.getScriptLock();
+  var deletedRows = 0;
+  var errors = [];
+
+  try {
+    lock.waitLock(15000);
+    var lastRow = logSheet.getLastRow();
+    var lastCol = logSheet.getLastColumn();
+
+    if (lastRow <= 1) {
+      return {
+        success: true,
+        message: "Tidak ada data baris log harian untuk dibersihkan.",
+        deletedRowsCount: 0
+      };
+    }
+
+    // Ambil seluruh data baris (termasuk header di baris 1)
+    var allData = logSheet.getRange(1, 1, lastRow, Math.max(lastCol, 7)).getValues();
+    var headerRow = allData[0];
+    var keptRows = [headerRow];
+
+    for (var i = 1; i < allData.length; i++) {
+      var row = allData[i];
+      var val = row[0]; // Kolom A: Tanggal
+      var rowDate = null;
+
+      if (val instanceof Date) {
+        rowDate = val;
+      } else if (val) {
+        var str = String(val).trim();
+        var match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+        if (match) {
+          var day = parseInt(match[1], 10);
+          var month = parseInt(match[2], 10) - 1;
+          var year = parseInt(match[3], 10);
+          var hours = match[4] ? parseInt(match[4], 10) : 0;
+          var minutes = match[5] ? parseInt(match[5], 10) : 0;
+          var seconds = match[6] ? parseInt(match[6], 10) : 0;
+          rowDate = new Date(year, month, day, hours, minutes, seconds);
+        } else {
+          var parsed = new Date(str);
+          if (!isNaN(parsed.getTime())) {
+            rowDate = parsed;
+          }
+        }
+      }
+
+      // Jika tanggal valid dan lebih lama dari cutoffTime, kita buang (hitung deleted)
+      if (rowDate && !isNaN(rowDate.getTime()) && rowDate.getTime() < cutoffTime) {
+        deletedRows++;
+      } else {
+        keptRows.push(row);
+      }
+    }
+
+    if (deletedRows > 0) {
+      logSheet.clearContents();
+      logSheet.getRange(1, 1, keptRows.length, keptRows[0].length).setValues(keptRows);
+    }
+  } catch(e) {
+    errors.push("Error saat memproses baris log harian: " + e.toString());
+  } finally {
+    try { lock.releaseLock(); } catch(ignore) {}
+  }
+
+  return {
+    success: errors.length === 0,
+    message: "Pembersihan baris sheet log harian selesai. " + deletedRows + " baris dihapus.",
+    retentionDays: retentionDays,
+    cutoffDate: Utilities.formatDate(new Date(cutoffTime), "Asia/Jakarta", "yyyy-MM-dd HH:mm:ss"),
+    deletedRowsCount: deletedRows,
+    errors: errors
+  };
+}
+
+/**
  * Menghapus file foto Odometer KM dan Nota BBM di Google Drive yang umurnya > N hari (default 7 hari).
- * Data teks log KM di Google Sheets tetap dipertahankan sebagai riwayat audit.
  */
 function cleanupOldLogHarianFiles(days) {
   var retentionDays = (typeof days === "number" && days > 0) ? days : 7;
@@ -1735,12 +2102,29 @@ function cleanupOldLogHarianFiles(days) {
 
   return {
     success: true,
-    message: "Pembersihan file log harian selesai.",
+    message: "Pembersihan file foto Drive log harian selesai.",
     retentionDays: retentionDays,
     cutoffDate: Utilities.formatDate(new Date(cutoffTime), "Asia/Jakarta", "yyyy-MM-dd HH:mm:ss"),
     scannedFolders: scannedFolders,
     deletedFilesCount: deletedCount,
     errors: errors
+  };
+}
+
+/**
+ * Menghapus sekaligus File Foto di Google Drive (1) DAN Baris Data di Google Sheet (2) (> N hari)
+ */
+function cleanupOldLogHarianAll(days, ss, sheetMap) {
+  var retentionDays = (typeof days === "number" && days > 0) ? days : 7;
+  var fileResult = cleanupOldLogHarianFiles(retentionDays);
+  var rowResult = cleanupOldLogHarianRows(retentionDays, ss, sheetMap);
+
+  return {
+    success: fileResult.success && rowResult.success,
+    message: "Pembersihan total log harian selesai: " + fileResult.deletedFilesCount + " file foto dihapus dari Google Drive & " + rowResult.deletedRowsCount + " baris data dihapus dari Google Sheet.",
+    retentionDays: retentionDays,
+    filesResult: fileResult,
+    rowsResult: rowResult
   };
 }
 
@@ -1781,11 +2165,14 @@ function purgeOldFilesInFolder(folder, cutoffTime, errors) {
 }
 
 /**
- * Fungsi yang dipanggil oleh Time-Driven Trigger setiap hari
+ * Fungsi yang dipanggil oleh Time-Driven Trigger setiap hari.
+ * Sekarang membersihkan KEDUA-DUANYA:
+ * 1. File foto Odometer & Nota BBM di Google Drive
+ * 2. Baris data log di Google Sheet log_harian
  */
 function autoCleanupLogHarian7Days() {
-  var result = cleanupOldLogHarianFiles(7);
-  Logger.log("Auto Cleanup Log Harian (7 Hari): " + JSON.stringify(result));
+  var result = cleanupOldLogHarianAll(7);
+  Logger.log("Auto Cleanup Log Harian (Drive + Sheet 7 Hari): " + JSON.stringify(result));
   return result;
 }
 
@@ -1810,13 +2197,64 @@ function setupAutoCleanupTrigger() {
 
     return {
       success: true,
-      message: "Trigger otomatis harian 'autoCleanupLogHarian7Days' berhasil dipasang (Pukul 01:00 - 02:00 WIB)."
+      message: "Trigger otomatis harian 'autoCleanupLogHarian7Days' berhasil dipasang (Pukul 01:00 - 02:00 WIB). Membersihkan foto Drive dan baris Google Sheet > 7 hari."
     };
   } catch(e) {
     return {
       success: false,
       message: "Gagal memasang trigger: " + e.toString()
     };
+  }
+}
+
+/**
+ * Otomatis mengecek dan memasang trigger background jika belum terpasang.
+ * Berjalan secara senyap tanpa mengganggu user.
+ */
+function ensureAutoCleanupTriggerInstalled() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    var exists = false;
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "autoCleanupLogHarian7Days") {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) {
+      setupAutoCleanupTrigger();
+    }
+  } catch(e) {
+    Logger.log("ensureAutoCleanupTriggerInstalled silent error: " + e.toString());
+  }
+}
+
+/**
+ * Pembersihan otomatis saat ada aktivitas submit log harian.
+ * Dibatasi maksimal 1 kali per hari menggunakan ScriptProperties / CacheService
+ * agar tidak menambah waktu respons saat submit.
+ */
+function maybeAutoRunCleanup(ss, sheetMap) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var lastCleanupDate = cache ? cache.get("last_auto_log_cleanup_date") : null;
+    var todayStr = Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyy-MM-dd");
+
+    if (lastCleanupDate === todayStr) {
+      return; // Sudah dibersihkan hari ini
+    }
+
+    // Jalankan pembersihan baris sheet dan file Drive > 7 hari secara otomatis
+    cleanupOldLogHarianAll(7, ss, sheetMap);
+
+    if (cache) {
+      cache.put("last_auto_log_cleanup_date", todayStr, 21600); // cache selama 6 jam
+    }
+
+    // Pastikan juga trigger terjadwal harian aktif
+    ensureAutoCleanupTriggerInstalled();
+  } catch(e) {
+    Logger.log("maybeAutoRunCleanup error: " + e.toString());
   }
 }
 
@@ -2909,13 +3347,14 @@ function extractKmFromImage(base64Data) {
     var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") 
                  || "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ";
 
-    if (!apiKey || apiKey === "AQ.Ab8RN6KlZ_4E0UXZKnsr5e-ex9rV4ISxkDCrNiEjOo9KQfdlAQ") {
+    if (!apiKey) {
       return { 
         success: false, 
         message: "API Key Gemini belum dikonfigurasi di Script Properties SCRIPT_PROPERTIES. Silakan atur GEMINI_API_KEY." 
       };
     }
 
+    var prompt = "Kamu adalah sistem OCR Odometer Truk. Tugasmu hanya membaca angka total kilometer (ODO / TOTAL / KM) dari foto speedometer ini. Kembalikan HANYA angka integer (contoh: 84520), tanpa spasi, huruf, satuan, atau tanda baca apapun. Jika tidak yakin atau tidak terbaca, kembalikan teks KOSONG.";
     var models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
     var lastError = "";
 
@@ -2927,7 +3366,7 @@ function extractKmFromImage(base64Data) {
         "contents": [
           {
             "parts": [
-              { "text": "Tolong baca angka odometer (kilometer saat ini) dari foto ini. Hanya kembalikan angkanya saja dalam format integer murni tanpa teks/tambahan/simbol apa pun (contoh: 124530). Jika angka tidak terbaca, kembalikan 'null'." },
+              { "text": prompt },
               {
                 "inlineData": {
                   "mimeType": "image/jpeg",
@@ -2938,6 +3377,7 @@ function extractKmFromImage(base64Data) {
           }
         ],
         "generationConfig": {
+          "temperature": 0.1,
           "responseMimeType": "text/plain"
         }
       };
@@ -2957,11 +3397,11 @@ function extractKmFromImage(base64Data) {
         if (responseCode === 200) {
           var result = JSON.parse(responseText);
           if (result.candidates && result.candidates.length > 0) {
-            var text = result.candidates[0].content.parts[0].text.trim();
-            var digits = text.replace(/\D/g, "");
+            var rawText = result.candidates[0].content.parts[0].text.trim();
+            var digits = rawText.replace(/[^0-9]/g, "");
             var km = parseInt(digits, 10);
-            if (!isNaN(km)) {
-              return { success: true, km: km };
+            if (!isNaN(km) && km > 0 && km < 2000000) {
+              return { success: true, km: km, rawText: rawText };
             }
           }
         } else {
@@ -2972,9 +3412,9 @@ function extractKmFromImage(base64Data) {
       }
     }
 
-    return { success: false, message: "Gagal membaca odometer: " + lastError };
+    return { success: false, message: "Angka odometer tidak terdeteksi jelas pada foto. " + lastError };
   } catch (err) {
-    return { success: false, message: "Error OCR: " + err.toString() };
+    return { success: false, message: "Error OCR server: " + err.toString() };
   }
 }
 
@@ -3305,75 +3745,6 @@ function handleAsistenAi(contents) {
   }
 }
 
-/**
- * Backend Fallback OCR Odometer
- * Mengekstrak angka KM Odometer dari gambar foto speedometer/odometer.
- */
-function extractKmFromImage(base64Image) {
-  try {
-    if (!base64Image) {
-      return { success: false, message: "Gambar tidak ditemukan untuk diproses OCR." };
-    }
-
-    var cleanB64 = String(base64Image).replace(/^data:image\/[a-z]+;base64,/, "").replace(/\s/g, "");
-    var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") || "";
-
-    if (!apiKey) {
-      return { success: false, message: "OCR on-device telah aktif di aplikasi. Untuk OCR server, tambahkan GEMINI_API_KEY di Script Properties." };
-    }
-
-    var prompt = "Kamu adalah sistem OCR Odometer Truk. Tugasmu hanya membaca angka total kilometer (ODO / TOTAL / KM) dari foto speedometer ini. Kembalikan HANYA angka integer (contoh: 84520), tanpa spasi, huruf, satuan, atau tanda baca apapun. Jika tidak yakin atau tidak terbaca, kembalikan teks KOSONG.";
-    var models = ["gemini-2.0-flash", "gemini-1.5-flash"];
-
-    for (var i = 0; i < models.length; i++) {
-      var model = models[i];
-      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
-
-      var payload = {
-        "contents": [{
-          "parts": [
-            { "text": prompt },
-            {
-              "inlineData": {
-                "mimeType": "image/jpeg",
-                "data": cleanB64
-              }
-            }
-          ]
-        }],
-        "generationConfig": {
-          "temperature": 0.1,
-          "responseMimeType": "text/plain"
-        }
-      };
-
-      var options = {
-        "method": "post",
-        "contentType": "application/json",
-        "payload": JSON.stringify(payload),
-        "muteHttpExceptions": true
-      };
-
-      var response = UrlFetchApp.fetch(url, options);
-      if (response.getResponseCode() === 200) {
-        var resJson = JSON.parse(response.getContentText());
-        if (resJson.candidates && resJson.candidates.length > 0) {
-          var rawText = resJson.candidates[0].content.parts[0].text.trim();
-          var digits = rawText.replace(/[^0-9]/g, "");
-          var km = parseInt(digits, 10);
-          if (!isNaN(km) && km > 0 && km < 2000000) {
-            return { success: true, km: km, rawText: rawText };
-          }
-        }
-      }
-    }
-
-    return { success: false, message: "Angka odometer tidak terdeteksi jelas pada foto." };
-  } catch (err) {
-    return { success: false, message: "Error OCR server: " + err.toString() };
-  }
-}
-
 // ============================================
 // STRUCTURAL SETUP & SHEET FORMATTING (setupAllSheets)
 // ============================================
@@ -3395,14 +3766,15 @@ function setupAllSheets(ss) {
     setupSheetSparepart(ss);
     setupSheetServiceAC(ss);
     setupSheetKontakVendor(ss);
+    setupSheetFormArmada(ss);
     
     try {
-      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor) telah berhasil dirapikan secara instan!");
+      SpreadsheetApp.getUi().alert("🎉 SUCCESS! Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor, Form Armada) telah berhasil dirapikan secara instan!");
     } catch(uiErr) {
       Logger.log("Setup All Sheets Completed!");
     }
     
-    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor) telah berhasil dirapikan secara instan!" };
+    return { success: true, message: "Seluruh Sheet (Armada, Pengiriman, LogKM, Driver, Ban, Aki, Sparepart, Service AC, Kontak Vendor, Form Armada) telah berhasil dirapikan secara instan!" };
   } catch(e) {
     return { success: false, message: "Gagal memproses setupAllSheets: " + e.toString() };
   }
@@ -3413,7 +3785,7 @@ function setupAllSheets(ss) {
 // -------------------------------------------------------------
 function setupSheetArmada(ss) {
   var sheet = ss.getSheetByName("Armada") || ss.insertSheet("Armada");
-  var headers = [["Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "KM Service Berikutnya", "Sisa KM", "Status", "Flag", "Foto KM", "Catatan", "FOTO PROFIL ARMADA", "FOTO GANTUNGAN SERVICE"]];
+  var headers = [["Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "KM Service Berikutnya", "Sisa KM", "Status", "Flag", "Foto KM", "Catatan", "FOTO PROFIL ARMADA", "FOTO GANTUNGAN SERVICE", "Status Operasional", "Tanggal Nonaktif", "Alasan Nonaktif"]];
   
   applyHeaderStyle(sheet, headers, "#0A2540");
   
@@ -3615,5 +3987,79 @@ function applyGridAndResize(sheet, colCount, maxRows) {
   var dataRange = sheet.getRange(1, 1, maxRows, colCount);
   dataRange.setBorder(true, true, true, true, true, true, "#CBD5E1", SpreadsheetApp.BorderStyle.SOLID);
 }
+
+// -------------------------------------------------------------
+// 8. SHEET FORM ARMADA (KONTROL MASTER ARMADA OTOMATIS)
+// -------------------------------------------------------------
+function setupSheetFormArmada(ss) {
+  if (!ss) ss = getSpreadsheet();
+  var sheet = ss.getSheetByName("Form Armada") || ss.getSheetByName("FORM ARMADA");
+  if (!sheet) {
+    sheet = ss.insertSheet("Form Armada");
+  }
+  var headers = [["Aksi", "Armada ID", "No Polisi", "KM Saat Ini", "KM Service Terakhir", "Interval Service", "Alasan / Keterangan", "Status Proses", "Waktu Proses", "Pesan Proses"]];
+  
+  applyHeaderStyle(sheet, headers, "#1E293B");
+  var maxRows = Math.max(sheet.getLastRow(), 50);
+  var numRows = maxRows - 1;
+
+  sheet.getRange(2, 4, numRows, 3).setNumberFormat("#,##0");
+  sheet.getRange(2, 1, numRows, 3).setHorizontalAlignment("center");
+  sheet.getRange(2, 8, numRows, 2).setHorizontalAlignment("center");
+
+  // Validasi Dropdown Aksi (Kolom A)
+  var ruleAksi = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["TAMBAH", "NONAKTIFKAN", "AKTIFKAN_KEMBALI"], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 1, numRows, 1).setDataValidation(ruleAksi);
+
+  // Validasi Dropdown Status Proses (Kolom H)
+  var ruleStatus = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["MENUNGGU", "DIPROSES", "SELESAI", "GAGAL"], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 8, numRows, 1).setDataValidation(ruleStatus);
+
+  // Conditional Formatting Status Proses (Kolom H)
+  var statusRange = sheet.getRange(2, 8, numRows, 1);
+  var ruleMenunggu = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("MENUNGGU").setBackground("#FEF3C7").setFontColor("#92400E").setBold(true).setRanges([statusRange]).build();
+  var ruleDiproses = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("DIPROSES").setBackground("#DBEAFE").setFontColor("#1E40AF").setBold(true).setRanges([statusRange]).build();
+  var ruleSelesai = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("SELESAI").setBackground("#DCFCE7").setFontColor("#166534").setBold(true).setRanges([statusRange]).build();
+  var ruleGagal = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("GAGAL").setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true).setRanges([statusRange]).build();
+  sheet.setConditionalFormatRules([ruleMenunggu, ruleDiproses, ruleSelesai, ruleGagal]);
+
+  applyGridAndResize(sheet, headers[0].length, maxRows);
+}
+
+/**
+ * Trigger otomatis pemrosesan Form Armada (Time-driven setiap 5 menit)
+ */
+function setupFormArmadaTrigger() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "autoProcessFormArmada") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+    ScriptApp.newTrigger("autoProcessFormArmada")
+      .timeBased()
+      .everyMinutes(5)
+      .create();
+    return { success: true, message: "Trigger autoProcessFormArmada berhasil dipasang (berjalan otomatis setiap 5 menit)." };
+  } catch (err) {
+    return { success: false, message: "Gagal memasang trigger Form Armada: " + err.toString() };
+  }
+}
+
+function autoProcessFormArmada() {
+  var res = processFormArmada();
+  if (res && res.processedCount > 0) {
+    Logger.log("autoProcessFormArmada: " + JSON.stringify(res));
+  }
+  return res;
+}
+
 
 
