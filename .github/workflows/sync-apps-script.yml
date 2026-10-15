@@ -102,6 +102,10 @@ jobs:
             cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/Index.html" "$sync_dir/Index.html"
           fi
 
+          if [ -f "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/appsscript.json" ]; then
+            cp "$GITHUB_WORKSPACE/app/src/main/assets/apps-script/appsscript.json" "$sync_dir/appsscript.json"
+          fi
+
           test -s "$sync_dir/Code.js"
           test ! -e "$sync_dir/Code.gs"
 

@@ -4124,14 +4124,23 @@ function setupAllTriggers() {
       installed: logs
     };
   } catch (err) {
-    var errMsg = "Gagal memasang trigger otomatis: " + err.toString();
+    var rawErr = err.toString();
+    var isAuthErr = rawErr.indexOf("script.scriptapp") !== -1 || rawErr.indexOf("tidak memiliki izin") !== -1 || rawErr.indexOf("permission") !== -1;
+    var errMsg = isAuthErr 
+      ? "Otorisasi akun diperlukan: ScriptApp.newTrigger memerlukan persetujuan izin satu kali oleh akun Google pemilik project. Silakan klik ikon < > (Editor) di bilah kiri Apps Script, pilih fungsi 'setupAllTriggers', lalu klik '▷ Jalankan' (Run) dan setujui izin (Izinkan). Setelah diizinkan satu kali, pemicu otomatis akan aktif permanen."
+      : "Gagal memasang trigger otomatis: " + rawErr;
     Logger.log(errMsg);
     try {
       SpreadsheetApp.getUi().alert("❌ " + errMsg);
     } catch (uiErr) {}
     return {
       success: false,
-      message: errMsg
+      message: errMsg,
+      requiresAuthorization: isAuthErr,
+      troubleshooting: [
+        "Cara 1: Klik ikon < > (Editor) di kiri -> pilih 'setupAllTriggers' -> klik '▷ Jalankan' -> klik 'Tinjau Izin' -> 'Izinkan'.",
+        "Cara 2: Di halaman Pemicu (jam), klik tombol biru '+ Tambahkan Pemicu' di pojok kanan bawah -> pilih 'autoProcessFormArmada' -> Berbasis waktu -> Setiap 5 menit -> Simpan."
+      ]
     };
   }
 }
