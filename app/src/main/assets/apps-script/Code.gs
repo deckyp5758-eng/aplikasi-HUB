@@ -129,6 +129,11 @@ function getApiVersion(contents, e) {
  * Health check endpoint stabil tanpa membocorkan secret / credential
  */
 function handleHealthCheck(e, contents) {
+  try {
+    ensureAllTriggersInstalled();
+  } catch(err) {
+    Logger.log("Health check trigger install notice: " + err.toString());
+  }
   return {
     success: true,
     service: "HUB KEDIRI Apps Script Backend",
@@ -199,6 +204,10 @@ function doGet(e) {
       return jsonResponse(cleanupOldLogHarianAll(daysParam, ss, sheetMap));
     } else if (action === "setupCleanupTrigger" || action === "setup_cleanup_trigger") {
       return jsonResponse(setupAutoCleanupTrigger());
+    } else if (action === "setupAllTriggers" || action === "setup_all_triggers" || action === "setupTriggers" || action === "setup_triggers") {
+      return jsonResponse(setupAllTriggers());
+    } else if (action === "setupFormArmadaTrigger" || action === "setup_form_armada_trigger") {
+      return jsonResponse(setupFormArmadaTrigger());
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
@@ -320,6 +329,10 @@ function doPost(e) {
       return jsonResponse(cleanupOldLogHarianAll(daysParam, ss, sheetMap));
     } else if (action === "setupCleanupTrigger" || action === "setup_cleanup_trigger") {
       return jsonResponse(setupAutoCleanupTrigger());
+    } else if (action === "setupAllTriggers" || action === "setup_all_triggers" || action === "setupTriggers" || action === "setup_triggers") {
+      return jsonResponse(setupAllTriggers());
+    } else if (action === "setupFormArmadaTrigger" || action === "setup_form_armada_trigger") {
+      return jsonResponse(setupFormArmadaTrigger());
     } else if (action === "submitServiceAC" || action === "submitServiceAc" || action === "submit_service_ac") {
       return jsonResponse(submitServiceAC(contents, ss, sheetMap));
     } else if (action === "login") {
@@ -2212,21 +2225,7 @@ function setupAutoCleanupTrigger() {
  * Berjalan secara senyap tanpa mengganggu user.
  */
 function ensureAutoCleanupTriggerInstalled() {
-  try {
-    var triggers = ScriptApp.getProjectTriggers();
-    var exists = false;
-    for (var i = 0; i < triggers.length; i++) {
-      if (triggers[i].getHandlerFunction() === "autoCleanupLogHarian7Days") {
-        exists = true;
-        break;
-      }
-    }
-    if (!exists) {
-      setupAutoCleanupTrigger();
-    }
-  } catch(e) {
-    Logger.log("ensureAutoCleanupTriggerInstalled silent error: " + e.toString());
-  }
+  ensureAllTriggersInstalled();
 }
 
 /**
@@ -4060,6 +4059,150 @@ function autoProcessFormArmada() {
   }
   return res;
 }
+
+/**
+ * MASTER SETUP TRIGGERS:
+ * Memasang SEMUA Pemicu / Triggers Otomatis di Google Apps Script:
+ * 1. autoProcessFormArmada (Setiap 5 menit memproses Form Armada MENUNGGU)
+ * 2. autoCleanupLogHarian7Days (Harian pk 01:00 - 02:00 WIB cleanup Drive & Sheet > 7 hari)
+ * 3. handleSpreadsheetEdit (onEdit Spreadsheet untuk respon instan Form Armada)
+ */
+function setupAllTriggers() {
+  var logs = [];
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      var fn = triggers[i].getHandlerFunction();
+      if (fn === "autoProcessFormArmada" || 
+          fn === "autoCleanupLogHarian7Days" || 
+          fn === "processFormArmada" ||
+          fn === "handleSpreadsheetEdit") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+
+    // 1. Pasang Trigger Form Armada (Setiap 5 menit)
+    ScriptApp.newTrigger("autoProcessFormArmada")
+      .timeBased()
+      .everyMinutes(5)
+      .create();
+    logs.push("✅ autoProcessFormArmada (Berjalan otomatis setiap 5 menit)");
+
+    // 2. Pasang Trigger Cleanup Log Harian (Setiap hari pk 01:00 WIB)
+    ScriptApp.newTrigger("autoCleanupLogHarian7Days")
+      .timeBased()
+      .everyDays(1)
+      .atHour(1)
+      .inTimezone("Asia/Jakarta")
+      .create();
+    logs.push("✅ autoCleanupLogHarian7Days (Pukul 01:00 - 02:00 WIB membersihkan foto Drive & baris Sheet > 7 hari)");
+
+    // 3. Pasang Trigger onEdit untuk Spreadsheet (jika script terhubung dengan Spreadsheet)
+    try {
+      var ss = getSpreadsheet();
+      if (ss) {
+        ScriptApp.newTrigger("handleSpreadsheetEdit")
+          .forSpreadsheet(ss)
+          .onEdit()
+          .create();
+        logs.push("✅ handleSpreadsheetEdit (Pemicu instan saat admin/staff mengedit tab Form Armada)");
+      }
+    } catch (eEdit) {
+      logs.push("ℹ️ Trigger spreadsheet onEdit: " + eEdit.toString());
+    }
+
+    var resultText = "🎉 SEMUA PEMICU (TRIGGERS) TELAH BERHASIL DIPASANG:\n\n" + logs.join("\n");
+    Logger.log(resultText);
+
+    try {
+      SpreadsheetApp.getUi().alert("🎉 Pemasangan Pemicu Berhasil!\n\n" + logs.join("\n"));
+    } catch (uiErr) {}
+
+    return {
+      success: true,
+      message: resultText,
+      installed: logs
+    };
+  } catch (err) {
+    var errMsg = "Gagal memasang trigger otomatis: " + err.toString();
+    Logger.log(errMsg);
+    try {
+      SpreadsheetApp.getUi().alert("❌ " + errMsg);
+    } catch (uiErr) {}
+    return {
+      success: false,
+      message: errMsg
+    };
+  }
+}
+
+/**
+ * Handler event onEdit spreadsheet untuk respon instan saat tab Form Armada diedit
+ */
+function handleSpreadsheetEdit(e) {
+  try {
+    if (!e || !e.range) {
+      processFormArmada();
+      return;
+    }
+    var sheet = e.range.getSheet();
+    var sheetGid = String(sheet.getSheetId());
+    var sheetName = sheet.getName().toUpperCase();
+    
+    if (sheetGid === String(GID_FORM_ARMADA) || sheetName.indexOf("FORM ARMADA") !== -1) {
+      var col = e.range.getColumn();
+      // Kolom A (Aksi) atau Kolom H (Status Proses)
+      if (col === 1 || col === 8 || col === 2) {
+        processFormArmada();
+      }
+    }
+  } catch (err) {
+    Logger.log("handleSpreadsheetEdit error: " + err.toString());
+  }
+}
+
+/**
+ * Menu otomatis di Google Spreadsheet saat dibuka oleh Admin / Staff
+ */
+function onOpen(e) {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.createMenu("⚡ HUB Kediri System")
+      .addItem("🔄 Pasang Semua Trigger Otomatis", "setupAllTriggers")
+      .addItem("🚗 Proses Form Armada Sekarang", "autoProcessFormArmada")
+      .addItem("🧹 Bersihkan Log Harian (7 Hari)", "autoCleanupLogHarian7Days")
+      .addSeparator()
+      .addItem("🛠️ Rapikan & Format Semua Sheet", "setupAllSheets")
+      .addToUi();
+  } catch (err) {
+    Logger.log("onOpen error: " + err.toString());
+  }
+  
+  // Self-healing: pasang trigger jika belum ada
+  ensureAllTriggersInstalled();
+}
+
+/**
+ * Memastikan semua background triggers terpasang secara otomatis (Self-Healing)
+ */
+function ensureAllTriggersInstalled() {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    var hasArmada = false;
+    var hasCleanup = false;
+    for (var i = 0; i < triggers.length; i++) {
+      var fn = triggers[i].getHandlerFunction();
+      if (fn === "autoProcessFormArmada") hasArmada = true;
+      if (fn === "autoCleanupLogHarian7Days") hasCleanup = true;
+    }
+    if (!hasArmada || !hasCleanup) {
+      setupAllTriggers();
+    }
+  } catch(e) {
+    Logger.log("ensureAllTriggersInstalled silent info: " + e.toString());
+  }
+}
+
 
 
 
