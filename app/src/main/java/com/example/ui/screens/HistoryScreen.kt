@@ -67,6 +67,9 @@ import com.example.ui.FleetViewModel
 import com.example.utils.CommonUtils
 import com.example.utils.ImageCompressor
 import com.example.ui.components.InAppUpdateDialog
+import com.example.ui.components.VendorWhatsAppDialog
+import com.example.ui.components.DaftarKontakVendorDialog
+import com.example.data.VendorPicApiItem
 
 @Composable
 fun StatCard(
@@ -158,7 +161,8 @@ fun DetailArmadaDialog(
     isFotoTruckUploading: Boolean = false,
     fotoTruckUploadStatus: String? = null,
     isFotoServiceUploading: Boolean = false,
-    fotoServiceUploadStatus: String? = null
+    fotoServiceUploadStatus: String? = null,
+    onOpenVendorWa: ((ArmadaEntity) -> Unit)? = null
 ) {
     val truckImages = listOf(
         "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=600&auto=format&fit=crop&q=80",
@@ -440,6 +444,35 @@ fun DetailArmadaDialog(
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                    }
+
+                                    if (!isAman && onOpenVendorWa != null) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Button(
+                                            onClick = { onOpenVendorWa(armada) },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF25D366)
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(40.dp)
+                                                .testTag("btn_detail_wa_vendor_${armada.armadaId}")
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_whatsapp),
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Booking Servis ke Vendor via WhatsApp",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = Color.White
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1603,6 +1636,68 @@ fun HistoryScreen(viewModel: FleetViewModel) {
         "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?w=400&auto=format&fit=crop&q=80",
         "https://images.unsplash.com/photo-1591768793355-74d7189607f7?w=400&auto=format&fit=crop&q=80"
     )
+
+    val kontakVendorList by viewModel.kontakVendorList.collectAsStateWithLifecycle()
+    var armadaForVendorWa by remember { mutableStateOf<ArmadaEntity?>(null) }
+    var showDaftarVendorDialog by remember { mutableStateOf(false) }
+
+    val resolvedVendor = remember(armadaForVendorWa, kontakVendorList) {
+        armadaForVendorWa?.let { arm ->
+            val cleanId = arm.armadaId.trim().uppercase()
+            kontakVendorList.firstOrNull { v ->
+                !v.kategori.contains("AC", ignoreCase = true) &&
+                v.armadaHandle.uppercase().split(",", " ").map { it.trim() }.contains(cleanId)
+            } ?: if (cleanId.contains("03")) {
+                kontakVendorList.firstOrNull { it.idVendor.contains("DAIHATSU", ignoreCase = true) || it.namaVendor.contains("DAIHATSU", ignoreCase = true) }
+            } else {
+                kontakVendorList.firstOrNull { it.idVendor.contains("HINO", ignoreCase = true) || it.namaVendor.contains("HINO", ignoreCase = true) }
+            } ?: VendorPicApiItem(
+                idVendor = if (cleanId.contains("03")) "VND-DAIHATSU" else "VND-HINO",
+                namaVendor = if (cleanId.contains("03")) "Bengkel Resmi Daihatsu Kediri" else "Bengkel Resmi Hino Motors Kediri",
+                kategori = "SERVIS MESIN",
+                armadaHandle = if (cleanId.contains("03")) "HK03" else "HK01, HK02, HK04",
+                namaPic = if (cleanId.contains("03")) "Service Advisor Daihatsu" else "Service Advisor Hino",
+                noWhatsapp = if (cleanId.contains("03")) "6281234567891" else "6281234567890",
+                alamatBengkel = if (cleanId.contains("03")) "Jl. Joyoboyo, Kediri" else "Jl. Mayor Bismo, Kediri"
+            )
+        }
+    }
+
+    armadaForVendorWa?.let { arm ->
+        val targetV = resolvedVendor ?: VendorPicApiItem(
+            idVendor = "VND-HINO",
+            namaVendor = "Bengkel Rekanan",
+            kategori = "SERVIS MESIN",
+            namaPic = "Service Advisor",
+            noWhatsapp = "6281234567890"
+        )
+        val latestLog = logs.firstOrNull { it.armadaId.equals(arm.armadaId, ignoreCase = true) }
+        val keluhan = arm.catattan.ifBlank { latestLog?.catatan ?: "" }
+        val odoPhoto = arm.fotoKm.ifBlank { latestLog?.linkFoto }
+        val servicePhoto = arm.fotoService
+
+        VendorWhatsAppDialog(
+            armadaId = arm.armadaId,
+            noPolisi = arm.noPolisi,
+            kmSaatIni = arm.kmSaatIni,
+            sisaKm = arm.sisaKm,
+            kmBatasServis = arm.kmServiceBerikutnya,
+            initialKeluhan = keluhan,
+            fotoOdometerUrl = odoPhoto,
+            fotoGantunganUrl = servicePhoto,
+            isAcService = false,
+            vendor = targetV,
+            onDismiss = { armadaForVendorWa = null }
+        )
+    }
+
+    if (showDaftarVendorDialog) {
+        DaftarKontakVendorDialog(
+            vendorList = kontakVendorList,
+            onRefresh = { viewModel.refreshKontakVendor() },
+            onDismiss = { showDaftarVendorDialog = false }
+        )
+    }
     
     selectedArmadaDetail?.let { armada ->
         val liveArmada = armadaList.find { it.armadaId == armada.armadaId } ?: armada
@@ -1636,7 +1731,11 @@ fun HistoryScreen(viewModel: FleetViewModel) {
             isFotoTruckUploading = isFotoTruckUploading,
             fotoTruckUploadStatus = fotoTruckUploadStatus,
             isFotoServiceUploading = isFotoServiceUploading,
-            fotoServiceUploadStatus = fotoServiceUploadStatus
+            fotoServiceUploadStatus = fotoServiceUploadStatus,
+            onOpenVendorWa = { arm ->
+                selectedArmadaDetail = null
+                armadaForVendorWa = arm
+            }
         )
     }
 
@@ -1784,6 +1883,83 @@ fun HistoryScreen(viewModel: FleetViewModel) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
+                    }
+                }
+            }
+
+            // 3b. Quick Banner: Kontak PIC Bengkel Vendor (Hino, Daihatsu, Prima AC)
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clickable { showDaftarVendorDialog = true }
+                        .testTag("banner_kontak_vendor"),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
+                    border = BorderStroke(1.dp, Color(0xFF86EFAC))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .background(Color(0xFF25D366), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_whatsapp),
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Kontak PIC Vendor Servis & AC",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = Color(0xFF14532D)
+                                )
+                                Text(
+                                    text = "Hino (HK01,02,04) • Daihatsu (HK03) • Prima AC",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF166534)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            color = Color(0xFF15803D),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "Lihat PIC",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2142,6 +2318,49 @@ fun HistoryScreen(viewModel: FleetViewModel) {
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                            }
+
+                            if (!isAman) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Button(
+                                    onClick = { armadaForVendorWa = item },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(38.dp)
+                                        .testTag("wa_vendor_card_btn_${item.armadaId}"),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF25D366)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_whatsapp),
+                                        contentDescription = "WhatsApp Vendor",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    val matchedVendor = kontakVendorList.firstOrNull { v ->
+                                        !v.kategori.contains("AC", ignoreCase = true) &&
+                                        v.armadaHandle.uppercase().split(",", " ").map { it.trim() }.filter { it.isNotEmpty() }.contains(item.armadaId.trim().uppercase())
+                                    } ?: if (item.armadaId.contains("03")) {
+                                        kontakVendorList.firstOrNull { it.idVendor.contains("DAIHATSU", ignoreCase = true) || it.namaVendor.contains("DAIHATSU", ignoreCase = true) }
+                                    } else {
+                                        kontakVendorList.firstOrNull { it.idVendor.contains("HINO", ignoreCase = true) || it.namaVendor.contains("HINO", ignoreCase = true) }
+                                    }
+                                    val vendorBrand = if (matchedVendor != null) {
+                                        if (matchedVendor.idVendor.contains("DAIHATSU", ignoreCase = true) || matchedVendor.namaVendor.contains("DAIHATSU", ignoreCase = true)) "Daihatsu" else "Hino"
+                                    } else {
+                                        if (item.armadaId.contains("03")) "Daihatsu" else "Hino"
+                                    }
+                                    val picInfo = matchedVendor?.namaPic?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""
+                                    Text(
+                                        text = "Hubungi Vendor $vendorBrand$picInfo via WhatsApp",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = Color.White
                                     )
                                 }
                             }

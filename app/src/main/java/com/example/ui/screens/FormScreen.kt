@@ -82,15 +82,6 @@ fun FormScreen(viewModel: FleetViewModel) {
     val notaBbmStatus by viewModel.notaBbmStatus.collectAsStateWithLifecycle()
     val isLoading by viewModel.submitLoading.collectAsStateWithLifecycle()
     val error by viewModel.submitError.collectAsStateWithLifecycle()
-    val ocrLoading by viewModel.ocrLoading.collectAsStateWithLifecycle()
-    val ocrSuccessMessage by viewModel.ocrSuccessMessage.collectAsStateWithLifecycle()
-
-    LaunchedEffect(ocrSuccessMessage) {
-        ocrSuccessMessage?.let { msg ->
-            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
-            viewModel.clearOcrMessage()
-        }
-    }
 
     var dropdownExpanded by remember { mutableStateOf(false) }
     var tempCameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
@@ -339,22 +330,13 @@ fun FormScreen(viewModel: FleetViewModel) {
                         }
                     }
 
-                    // KM Terdeteksi Input
+                    // KM Input
                     OutlinedTextField(
                         value = kmInput,
                         onValueChange = { viewModel.setKmInput(it) },
-                        label = { Text(if (ocrLoading) "Memindai Odometer..." else "KM Terdeteksi saat ini") },
-                        enabled = !ocrLoading,
+                        label = { Text("KM Saat Ini") },
                         leadingIcon = {
-                            if (ocrLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            } else {
-                                Icon(Icons.Default.Speed, contentDescription = "Speedometer")
-                            }
+                            Icon(Icons.Default.Speed, contentDescription = "Speedometer")
                         },
                         suffix = { Text("KM", fontWeight = FontWeight.Bold) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -364,7 +346,7 @@ fun FormScreen(viewModel: FleetViewModel) {
                         shape = RoundedCornerShape(12.dp)
                     )
 
-                    // Photo KM upload (Optional)
+                    // Photo KM upload (Opsional)
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = "Foto Odometer KM (Opsional)",
@@ -454,59 +436,31 @@ fun FormScreen(viewModel: FleetViewModel) {
                                         )
                                     }
 
-                                    // OCR Status Chip Overlay (Bottom)
+                                    // Status Chip Overlay (Bottom)
                                     Surface(
                                         modifier = Modifier
                                             .align(Alignment.BottomStart)
                                             .padding(8.dp),
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (ocrLoading) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            if (ocrLoading) {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(14.dp),
-                                                    strokeWidth = 2.dp,
-                                                    color = MaterialTheme.colorScheme.primary
-                                                )
-                                                Text(
-                                                    "AI On-Device Memindai...",
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                                )
-                                            } else {
-                                                Icon(
-                                                    Icons.Default.CheckCircle,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Text(
-                                                    "AI Scanner Offline Siap",
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                "Foto Odometer Terlampir",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
                                         }
-                                    }
-                                }
-
-                                // Quick Actions under Photo
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    TextButton(
-                                        onClick = { viewModel.setPhoto(bitmap) },
-                                        enabled = !ocrLoading
-                                    ) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Pindai Ulang", modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Pindai Ulang Odometer", style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                             }

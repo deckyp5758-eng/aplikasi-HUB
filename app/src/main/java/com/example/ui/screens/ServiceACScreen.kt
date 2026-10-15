@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -27,8 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.R
+import com.example.data.VendorPicApiItem
 import com.example.ui.AppRole
 import com.example.ui.FleetViewModel
+import com.example.ui.components.VendorWhatsAppDialog
 import com.example.utils.CommonUtils
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -53,6 +57,24 @@ fun ServiceACScreen(
     val errorMessage by viewModel.serviceAcError.collectAsStateWithLifecycle()
     val successData by viewModel.serviceAcSuccess.collectAsStateWithLifecycle()
     val serviceAcList by viewModel.serviceAcList.collectAsStateWithLifecycle()
+    val kontakVendorList by viewModel.kontakVendorList.collectAsStateWithLifecycle()
+
+    var showAcVendorWaDialog by remember { mutableStateOf(false) }
+
+    val primaAcVendor = remember(kontakVendorList) {
+        kontakVendorList.firstOrNull { 
+            it.kategori.contains("AC", ignoreCase = true) || it.idVendor.contains("PRIMA", ignoreCase = true) 
+        } ?: VendorPicApiItem(
+            idVendor = "VND-PRIMA-AC",
+            namaVendor = "Prima AC Mobil Kediri",
+            kategori = "SERVIS AC",
+            armadaHandle = "ALL",
+            namaPic = "PIC Prima AC",
+            noWhatsapp = "6281234567892",
+            alamatBengkel = "Jl. Kilisuci, Kediri",
+            status = "AKTIF"
+        )
+    }
 
     // Navigation Guard: Hanya Role DRIVER yang diperbolehkan
     val isDriver = AppRole.fromString(userRole) == AppRole.DRIVER
@@ -509,6 +531,33 @@ fun ServiceACScreen(
                                     )
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(
+                                onClick = { showAcVendorWaDialog = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(40.dp)
+                                    .testTag("btn_wa_vendor_prima_ac"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF25D366)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_whatsapp),
+                                    contentDescription = "WhatsApp Prima AC",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Hubungi Prima AC via WhatsApp (${primaAcVendor.namaPic.ifBlank { "PIC Prima AC" }})",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }
@@ -591,9 +640,37 @@ fun ServiceACScreen(
                         }
                     }
 
+                    OutlinedButton(
+                        onClick = { showAcVendorWaDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("btn_success_wa_prima_ac"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFF15803D)
+                        ),
+                        border = BorderStroke(1.dp, Color(0xFF22C55E))
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_whatsapp),
+                            contentDescription = null,
+                            tint = Color(0xFF25D366),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Kirim Notifikasi ke WhatsApp Prima AC",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+
                     Button(
                         onClick = { viewModel.dismissServiceAcSuccess() },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF0284C7)
@@ -604,6 +681,30 @@ fun ServiceACScreen(
                 }
             }
         }
+    }
+
+    // Modal Vendor WhatsApp Dialog untuk Prima AC
+    if (showAcVendorWaDialog && (selectedArmadaId.isNotEmpty() || successData != null || existingRecord != null)) {
+        val targetArmadaId = selectedArmadaId.ifBlank { successData?.armadaId ?: (existingRecord?.armadaId ?: "") }
+        val targetNoPolisi = noPolisi.ifBlank { successData?.noPolisi ?: (existingRecord?.noPolisi ?: "") }
+        val targetKmSaatIni = if (kmSaatIni > 0) kmSaatIni else (successData?.kmSaatIni ?: (existingRecord?.kmSaatIni ?: 0))
+        val targetSisaKm = successData?.sisaKm ?: (existingRecord?.sisaKm ?: 0)
+        val targetKmBerikutnya = successData?.kmServiceBerikutnya ?: (existingRecord?.kmServiceBerikutnya ?: 0)
+        val targetCatatan = existingRecord?.catatan.orEmpty()
+
+        VendorWhatsAppDialog(
+            armadaId = targetArmadaId,
+            noPolisi = targetNoPolisi,
+            kmSaatIni = targetKmSaatIni,
+            sisaKm = targetSisaKm,
+            kmBatasServis = targetKmBerikutnya,
+            initialKeluhan = targetCatatan,
+            fotoOdometerUrl = null,
+            fotoGantunganUrl = null,
+            isAcService = true,
+            vendor = primaAcVendor,
+            onDismiss = { showAcVendorWaDialog = false }
+        )
     }
 }
 

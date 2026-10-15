@@ -46,14 +46,6 @@ interface ApiService {
     ): ServiceLogApiResponse
 
     @POST("exec")
-    suspend fun performOcr(
-        @Body request: OcrApiRequest,
-        @Query("action") action: String = "performOcr",
-        @Query("spreadsheetId") spreadsheetId: String? = null,
-        @Query("sheetId") sheetId: String? = null
-    ): OcrApiResponse
-
-    @POST("exec")
     suspend fun callAsistenAi(
         @Body request: AsistenAiApiRequest,
         @Query("action") action: String = "asisten_ai",
@@ -206,6 +198,19 @@ interface ApiService {
     @GET("exec")
     suspend fun setupSheetKontakVendor(
         @Query("action") action: String = "setupSheetKontakVendor",
+        @Query("spreadsheetId") spreadsheetId: String? = null
+    ): CommonWriteApiResponse
+
+    @GET("exec")
+    suspend fun executeLogCleanup(
+        @Query("action") action: String = "cleanupLogAll",
+        @Query("days") days: Int = 7,
+        @Query("spreadsheetId") spreadsheetId: String? = null
+    ): CommonWriteApiResponse
+
+    @GET("exec")
+    suspend fun setupAutoCleanupTrigger(
+        @Query("action") action: String = "setupCleanupTrigger",
         @Query("spreadsheetId") spreadsheetId: String? = null
     ): CommonWriteApiResponse
 
@@ -423,20 +428,6 @@ data class ServiceLogApiRequest(
 
 data class ServiceLogApiResponse(
     val success: Boolean,
-    val message: String?
-)
-
-data class OcrApiRequest(
-    val action: String = "ocr",
-    val base64Photo: String,
-    val apiKey: String? = null,
-    val spreadsheetId: String? = null,
-    val sheetId: String? = null
-)
-
-data class OcrApiResponse(
-    val success: Boolean,
-    val km: Int?,
     val message: String?
 )
 

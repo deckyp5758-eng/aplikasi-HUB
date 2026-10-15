@@ -10,7 +10,6 @@ import com.example.utils.ApkUpdateManager
 import com.example.utils.ImageCompressor
 import com.example.utils.InputSanitizer
 import com.example.utils.NotificationHelper
-import com.example.utils.OnDeviceOcrScanner
 import com.example.utils.UpdateUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -99,6 +98,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _syncSuccess = MutableStateFlow<Boolean?>(null)
     val syncSuccess: StateFlow<Boolean?> = _syncSuccess.asStateFlow()
 
+    private val _lastSyncTime = MutableStateFlow("Otomatis saat aplikasi dibuka")
+    val lastSyncTime: StateFlow<String> = _lastSyncTime.asStateFlow()
+
     // Login Session
     private val _loggedInDriverName = MutableStateFlow(prefs.loggedInDriverName)
     val loggedInDriverName: StateFlow<String> = _loggedInDriverName.asStateFlow()
@@ -172,13 +174,6 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _notaBbmStatus = MutableStateFlow<String?>(null)
     val notaBbmStatus: StateFlow<String?> = _notaBbmStatus.asStateFlow()
 
-    // OCR Auto-Scanner State
-    private val _ocrLoading = MutableStateFlow(false)
-    val ocrLoading: StateFlow<Boolean> = _ocrLoading.asStateFlow()
-
-    private val _ocrSuccessMessage = MutableStateFlow<String?>(null)
-    val ocrSuccessMessage: StateFlow<String?> = _ocrSuccessMessage.asStateFlow()
-
     // Global Data Fetch States
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -223,10 +218,6 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearToastMessage() {
         _toastMessage.value = null
-    }
-
-    fun clearOcrMessage() {
-        _ocrSuccessMessage.value = null
     }
 
     init {
@@ -309,6 +300,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                     _kontakVendorList.value = repository.getKontakVendorList(forceRefresh = isPullToRefresh)
                 } catch (_: Exception) {}
                 _dataErrorMessage.value = null
+                val timeFormat = java.text.SimpleDateFormat("HH:mm 'WIB'", java.util.Locale("id", "ID")).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+                }
+                _lastSyncTime.value = timeFormat.format(java.util.Date())
             } catch (e: Exception) {
                 val err = "Gagal mengambil data dari Google Apps Script: ${e.localizedMessage ?: "Kesalahan koneksi"}"
                 _dataErrorMessage.value = err
@@ -484,9 +479,6 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setPhoto(bitmap: Bitmap?) {
         _selectedPhoto.value = bitmap
-        if (bitmap != null) {
-            triggerOcr(bitmap)
-        }
     }
 
     fun setNotaBbmImage(uri: Uri?, bitmap: Bitmap, fileName: String = "nota_bbm.jpg", mimeType: String = "image/jpeg", size: Long = 0L) {
@@ -522,43 +514,6 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setNotaBbmStatus(status: String?) {
         _notaBbmStatus.value = status
-    }
-
-    private fun triggerOcr(bitmap: Bitmap) {
-        viewModelScope.launch {
-            _ocrLoading.value = true
-            _ocrSuccessMessage.value = null
-            _submitError.value = null
-
-            // Prioritize ultra-fast on-device ML Kit OCR (100% Free, Offline, No API Key needed)
-            val onDeviceResult = OnDeviceOcrScanner.scanOdometerFromBitmap(bitmap)
-            if (onDeviceResult.isSuccess) {
-                val detectedKm = onDeviceResult.getOrNull()
-                if (detectedKm != null && detectedKm > 0) {
-                    _kmInput.value = detectedKm.toString()
-                    _ocrSuccessMessage.value = "Odometer berhasil terdeteksi (${detectedKm} KM)! Silakan periksa kembali sebelum mengirim."
-                    _ocrLoading.value = false
-                    return@launch
-                }
-            }
-
-            // Fallback: If on-device fails or yields inconclusive result, attempt backend/fallback OCR
-            val bytes = ImageCompressor.compressBitmapToWebP(bitmap, maxDimension = 1280, quality = 80)
-            when (val result = repository.performOcr(bytes)) {
-                is OcrResult.Success -> {
-                    _kmInput.value = result.km.toString()
-                    _ocrSuccessMessage.value = "Odometer berhasil dipindai (${result.km} KM)! Silakan periksa kembali sebelum mengirim."
-                }
-                is OcrResult.Error -> {
-                    val fallbackError = onDeviceResult.exceptionOrNull()?.message 
-                        ?: result.message 
-                        ?: "Angka odometer tidak terbaca jelas. Pastikan foto fokus dan angka speedometer terlihat jelas."
-                    android.util.Log.e("FleetViewModel", "OCR Error: $fallbackError")
-                    _submitError.value = "Gagal memindai odometer: $fallbackError"
-                }
-            }
-            _ocrLoading.value = false
-        }
     }
 
     fun dismissSuccessDialog() {
@@ -1534,9 +1489,42 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         return repository.getVendorForArmada(armadaId, isAcService)
     }
 
+    fun refreshKontakVendor(onComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val list = repository.getKontakVendorList(forceRefresh = true)
+                _kontakVendorList.value = list
+            } catch (e: Exception) {
+                android.util.Log.w("FleetViewModel", "Failed refreshing vendor contacts: ${e.message}")
+            } finally {
+                onComplete?.invoke()
+            }
+        }
+    }
+
     fun setupSheetKontakVendor(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val result = repository.setupSheetKontakVendorRemote()
+            result.onSuccess { msg -> onResult(true, msg) }
+                .onFailure { err -> onResult(false, err.message ?: "Gagal") }
+        }
+    }
+
+    fun executeLogCleanup(days: Int = 7, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.executeLogCleanupRemote(days)
+            result.onSuccess { msg ->
+                refreshMetadata(isPullToRefresh = true)
+                onResult(true, msg)
+            }.onFailure { err ->
+                onResult(false, err.message ?: "Gagal menjalankan pembersihan log.")
+            }
+        }
+    }
+
+    fun setupAutoCleanupTrigger(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.setupAutoCleanupTriggerRemote()
             result.onSuccess { msg -> onResult(true, msg) }
                 .onFailure { err -> onResult(false, err.message ?: "Gagal") }
         }

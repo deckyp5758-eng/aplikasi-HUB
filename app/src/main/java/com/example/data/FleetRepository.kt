@@ -1298,55 +1298,6 @@ class FleetRepository(
         }
     }
 
-    suspend fun performOcr(photoBytes: ByteArray): OcrResult {
-        val isSheetsAvailable = prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()
-        if (isSheetsAvailable) {
-            try {
-                val base64Photo = android.util.Base64.encodeToString(photoBytes, android.util.Base64.NO_WRAP)
-                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
-                val response = service.performOcr(
-                    request = OcrApiRequest(
-                        base64Photo = base64Photo,
-                        apiKey = getActiveGeminiApiKey(),
-                        spreadsheetId = prefs.googleSheetId,
-                        sheetId = prefs.googleSheetId
-                    ),
-                    spreadsheetId = prefs.googleSheetId,
-                    sheetId = prefs.googleSheetId
-                )
-
-                val message = response.message ?: ""
-                val isKeyError = !response.success && (
-                    message.contains("API Key", ignoreCase = true) ||
-                    message.contains("placeholder", ignoreCase = true) ||
-                    message.contains("belum dikonfigurasi", ignoreCase = true)
-                )
-
-                if (response.success && response.km != null) {
-                    return OcrResult.Success(response.km)
-                } else if (isKeyError) {
-                    val fallbackResult = performOcrLocally(photoBytes)
-                    if (fallbackResult is OcrResult.Success) {
-                        return fallbackResult
-                    } else {
-                        return OcrResult.Error(response.message ?: "Gagal mendeteksi odometer dari foto.")
-                    }
-                } else {
-                    return OcrResult.Error(response.message ?: "Gagal mendeteksi odometer dari foto.")
-                }
-            } catch (e: Exception) {
-                val fallbackResult = performOcrLocally(photoBytes)
-                if (fallbackResult is OcrResult.Success) {
-                    return fallbackResult
-                } else {
-                    return OcrResult.Error("Gagal memproses OCR: ${e.localizedMessage}")
-                }
-            }
-        } else {
-            return performOcrLocally(photoBytes)
-        }
-    }
-
     private fun compressImageIfNeeded(bytes: ByteArray): ByteArray {
         return try {
             if (bytes.size <= 500_000) return bytes
@@ -1379,93 +1330,6 @@ class FleetRepository(
             resultBytes
         } catch (e: Exception) {
             bytes
-        }
-    }
-
-    private suspend fun performOcrLocally(photoBytes: ByteArray): OcrResult {
-        val apiKey = getActiveGeminiApiKey()
-        if (apiKey.isBlank()) {
-            return OcrResult.Error("API Key Gemini belum dikonfigurasi di aplikasi (Silakan isi di menu Pengaturan).")
-        }
-
-        val compressedBytes = compressImageIfNeeded(photoBytes)
-
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val models = listOf("gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash")
-            var lastError = ""
-
-            for (model in models) {
-                try {
-                    val client = OkHttpClient.Builder()
-                        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-
-                    val base64Photo = Base64.encodeToString(compressedBytes, Base64.NO_WRAP)
-                    val mediaType = "application/json".toMediaType()
-                    val requestBodyBuilder = StringBuilder()
-                    requestBodyBuilder.append("{\n")
-                    requestBodyBuilder.append("  \"contents\": [\n")
-                    requestBodyBuilder.append("    {\n")
-                    requestBodyBuilder.append("      \"parts\": [\n")
-                    requestBodyBuilder.append("        { \"text\": \"Tolong baca angka odometer (kilometer saat ini) dari foto ini. Hanya kembalikan angkanya saja dalam format integer murni tanpa teks/tambahan/simbol apa pun (contoh: 124530). Jika angka tidak terbaca, kembalikan 'null'.\" },\n")
-                    requestBodyBuilder.append("        {\n")
-                    requestBodyBuilder.append("          \"inlineData\": {\n")
-                    requestBodyBuilder.append("            \"mimeType\": \"image/jpeg\",\n")
-                    requestBodyBuilder.append("            \"data\": \"$base64Photo\"\n")
-                    requestBodyBuilder.append("          }\n")
-                    requestBodyBuilder.append("        }\n")
-                    requestBodyBuilder.append("      ]\n")
-                    requestBodyBuilder.append("    }\n")
-                    requestBodyBuilder.append("  ],\n")
-                    requestBodyBuilder.append("  \"generationConfig\": {\n")
-                    requestBodyBuilder.append("    \"responseMimeType\": \"text/plain\"\n")
-                    requestBodyBuilder.append("  }\n")
-                    requestBodyBuilder.append("}")
-
-                    val body = requestBodyBuilder.toString().toRequestBody(mediaType)
-                    val request = Request.Builder()
-                        .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
-                        .post(body)
-                        .build()
-
-                    val response = client.newCall(request).execute()
-                    val responseBody = response.body?.string()
-
-                    if (response.isSuccessful && responseBody != null) {
-                        val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
-                        val adapter = moshi.adapter(GeminiDirectResponse::class.java)
-                        val geminiResponse = adapter.fromJson(responseBody)
-                        val text = geminiResponse?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim() ?: ""
-                        
-                        val digits = text.filter { it.isDigit() }
-                        val km = digits.toIntOrNull()
-                        if (km != null) {
-                            return@withContext OcrResult.Success(km)
-                        } else {
-                            lastError = "Gagal mendeteksi angka odometer dari foto: Respon AI bukan angka valid ('$text')."
-                        }
-                    } else if (response.code == 404) {
-                        lastError = "Model $model tidak ditemukan (404)."
-                        continue
-                    } else {
-                        val rawMessage = responseBody ?: response.message
-                        if (response.code == 429 || rawMessage.contains("RESOURCE_EXHAUSTED", ignoreCase = true) || rawMessage.contains("quota", ignoreCase = true)) {
-                            return@withContext OcrResult.Error("Batas kuota Gemini API telah terlampaui (RESOURCE_EXHAUSTED). Harap tunggu beberapa saat atau perbarui API Key di menu Pengaturan.")
-                        }
-                        if (response.code == 400 && rawMessage.contains("API_KEY_INVALID", ignoreCase = true)) {
-                            return@withContext OcrResult.Error("API Key Gemini tidak valid atau belum dikonfigurasi. Silakan periksa kembali di menu Pengaturan.")
-                        }
-                        lastError = "Gemini OCR Error (${response.code}): $rawMessage"
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("FleetRepository", "OCR error with model $model: ${e.localizedMessage}", e)
-                    lastError = "Gagal scan odometer secara lokal ($model): ${e.localizedMessage}"
-                }
-            }
-
-            return@withContext OcrResult.Error(if (lastError.isNotEmpty()) lastError else "Gagal memproses OCR foto.")
         }
     }
 
@@ -1982,11 +1846,40 @@ ATURAN KETAT:
     private var vendorCacheTimestamp: Long = 0L
     private val VENDOR_CACHE_TTL = 300_000L // 5 minutes TTL
 
+    private fun saveVendorsToLocal(vendors: List<VendorPicApiItem>) {
+        try {
+            val file = java.io.File(context.filesDir, "cached_vendors.json")
+            val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+            val type = com.squareup.moshi.Types.newParameterizedType(List::class.java, VendorPicApiItem::class.java)
+            val adapter = moshi.adapter<List<VendorPicApiItem>>(type)
+            val json = adapter.toJson(vendors)
+            file.writeText(json)
+        } catch (_: Exception) {}
+    }
+
+    private fun loadVendorsFromLocal(): List<VendorPicApiItem>? {
+        return try {
+            val file = java.io.File(context.filesDir, "cached_vendors.json")
+            if (file.exists()) {
+                val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+                val type = com.squareup.moshi.Types.newParameterizedType(List::class.java, VendorPicApiItem::class.java)
+                val adapter = moshi.adapter<List<VendorPicApiItem>>(type)
+                val json = file.readText()
+                adapter.fromJson(json)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun getKontakVendorList(forceRefresh: Boolean = false): List<VendorPicApiItem> {
         val now = System.currentTimeMillis()
         if (!forceRefresh && cachedVendors != null && (now - vendorCacheTimestamp < VENDOR_CACHE_TTL)) {
             return cachedVendors!!
         }
+        val localSaved = cachedVendors ?: loadVendorsFromLocal() ?: defaultVendors
+        cachedVendors = localSaved
+
         return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
             try {
                 val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
@@ -1994,6 +1887,7 @@ ATURAN KETAT:
                 if (response.success == true && !response.data.isNullOrEmpty()) {
                     cachedVendors = response.data
                     vendorCacheTimestamp = now
+                    saveVendorsToLocal(response.data)
                     response.data
                 } else {
                     cachedVendors ?: defaultVendors
@@ -2043,6 +1937,42 @@ ATURAN KETAT:
             Result.failure(Exception("Google Sheets mode belum aktif atau URL Apps Script kosong."))
         }
     }
+
+    suspend fun executeLogCleanupRemote(days: Int = 7): Result<String> {
+        return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val resp = service.executeLogCleanup(days = days, spreadsheetId = prefs.googleSheetId)
+                if (resp.success) {
+                    Result.success(resp.message ?: "Pembersihan foto Drive dan baris Google Sheet berhasil.")
+                } else {
+                    Result.failure(Exception(resp.message ?: "Gagal menjalankan pembersihan log."))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        } else {
+            Result.failure(Exception("Google Sheets mode belum aktif atau URL Apps Script kosong."))
+        }
+    }
+
+    suspend fun setupAutoCleanupTriggerRemote(): Result<String> {
+        return if (prefs.isGoogleSheetsMode && prefs.appsScriptUrl.isNotEmpty()) {
+            try {
+                val service = RetrofitClient.getApiService(prefs.appsScriptUrl)
+                val resp = service.setupAutoCleanupTrigger(spreadsheetId = prefs.googleSheetId)
+                if (resp.success) {
+                    Result.success(resp.message ?: "Trigger otomatis harian Apps Script berhasil dipasang.")
+                } else {
+                    Result.failure(Exception(resp.message ?: "Gagal memasang trigger otomatis Apps Script."))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        } else {
+            Result.failure(Exception("Google Sheets mode belum aktif atau URL Apps Script kosong."))
+        }
+    }
 }
 
 data class GeminiDirectResponse(
@@ -2065,11 +1995,6 @@ data class GeminiPart(
 sealed interface AsistenAiResult {
     data class Success(val message: String) : AsistenAiResult
     data class Error(val message: String) : AsistenAiResult
-}
-
-sealed interface OcrResult {
-    data class Success(val km: Int) : OcrResult
-    data class Error(val message: String) : OcrResult
 }
 
 sealed interface SubmitServiceResult {
