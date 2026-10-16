@@ -517,6 +517,13 @@ function getArmada(ss, sheetMap, e, contents) {
     }
   }
 
+  // Opportunistic auto-processing: pastikan entri 'Form Armada' yang 'MENUNGGU' langsung diproses
+  try {
+    processFormArmadaUnlocked(ss, sheetMap);
+  } catch (eQueue) {
+    Logger.log("Opportunistic processFormArmada: " + eQueue.toString());
+  }
+
   if (sheet) {
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
@@ -2262,9 +2269,15 @@ function setupAutoCleanupTrigger() {
       message: "Trigger otomatis harian 'autoCleanupLogHarian7Days' berhasil dipasang (Pukul 01:00 - 02:00 WIB). Membersihkan foto Drive dan baris Google Sheet > 7 hari."
     };
   } catch(e) {
+    var rawErr = e.toString();
+    var isAuthErr = rawErr.indexOf("script.scriptapp") !== -1 || rawErr.indexOf("tidak memiliki izin") !== -1 || rawErr.indexOf("permission") !== -1;
+    var errMsg = isAuthErr 
+      ? "Otorisasi akun diperlukan: ScriptApp.newTrigger memerlukan persetujuan izin satu kali oleh akun Google pemilik project. Silakan klik ikon < > (Editor) di Apps Script, pilih fungsi 'setupAllTriggers', lalu klik '▷ Jalankan' (Run) dan setujui izin (Izinkan). Atau buka Google Sheets -> menu '⚡ HUB Kediri System' -> '🔄 Pasang Semua Trigger Otomatis'."
+      : "Gagal memasang trigger: " + rawErr;
     return {
       success: false,
-      message: "Gagal memasang trigger: " + e.toString()
+      message: errMsg,
+      requiresAuthorization: isAuthErr
     };
   }
 }
@@ -4097,7 +4110,16 @@ function setupFormArmadaTrigger() {
       .create();
     return { success: true, message: "Trigger autoProcessFormArmada berhasil dipasang (berjalan otomatis setiap 5 menit)." };
   } catch (err) {
-    return { success: false, message: "Gagal memasang trigger Form Armada: " + err.toString() };
+    var rawErr = err.toString();
+    var isAuthErr = rawErr.indexOf("script.scriptapp") !== -1 || rawErr.indexOf("tidak memiliki izin") !== -1 || rawErr.indexOf("permission") !== -1;
+    var errMsg = isAuthErr 
+      ? "Otorisasi akun diperlukan: ScriptApp.newTrigger memerlukan persetujuan izin satu kali oleh akun Google pemilik project. Silakan klik ikon < > (Editor) di Apps Script, pilih fungsi 'setupAllTriggers', lalu klik '▷ Jalankan' (Run) dan setujui izin (Izinkan). Atau buka Google Sheets -> menu '⚡ HUB Kediri System' -> '🔄 Pasang Semua Trigger Otomatis'."
+      : "Gagal memasang trigger Form Armada: " + rawErr;
+    return {
+      success: false,
+      message: errMsg,
+      requiresAuthorization: isAuthErr
+    };
   }
 }
 
@@ -4226,7 +4248,7 @@ function onOpen(e) {
   try {
     var ui = SpreadsheetApp.getUi();
     ui.createMenu("⚡ HUB Kediri System")
-      .addItem("🔄 Pasang Semua Trigger Otomatis", "setupAllTriggers")
+      .addItem("🔄 Pasang / Aktifkan Semua Trigger Otomatis", "setupAllTriggers")
       .addItem("🚗 Proses Form Armada Sekarang", "autoProcessFormArmada")
       .addItem("🧹 Bersihkan Log Harian (7 Hari)", "autoCleanupLogHarian7Days")
       .addSeparator()
@@ -4235,16 +4257,15 @@ function onOpen(e) {
   } catch (err) {
     Logger.log("onOpen error: " + err.toString());
   }
-  
-  // Self-healing: pasang trigger jika belum ada
-  ensureAllTriggersInstalled();
 }
 
 /**
  * Memastikan semua background triggers terpasang secara otomatis (Self-Healing)
+ * Hanya dijalankan saat konteks memiliki izin penuh (misal via menu atau editor).
  */
 function ensureAllTriggersInstalled() {
   try {
+    if (typeof ScriptApp === "undefined" || !ScriptApp.getProjectTriggers) return;
     var triggers = ScriptApp.getProjectTriggers();
     var hasArmada = false;
     var hasCleanup = false;
