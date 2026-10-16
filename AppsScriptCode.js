@@ -208,6 +208,8 @@ function doGet(e) {
       return jsonResponse(setupAllTriggers());
     } else if (action === "setupFormArmadaTrigger" || action === "setup_form_armada_trigger") {
       return jsonResponse(setupFormArmadaTrigger());
+    } else if (action === "getFormArmadaStatus" || action === "get_form_armada_status") {
+      return jsonResponse(getFormArmadaStatus(ss, sheetMap));
     } else if (action === "checkUpdate" || action === "check_update" || action === "getAppUpdate") {
       return jsonResponse({
         success: true,
@@ -333,6 +335,8 @@ function doPost(e) {
       return jsonResponse(setupAllTriggers());
     } else if (action === "setupFormArmadaTrigger" || action === "setup_form_armada_trigger") {
       return jsonResponse(setupFormArmadaTrigger());
+    } else if (action === "getFormArmadaStatus" || action === "get_form_armada_status") {
+      return jsonResponse(getFormArmadaStatus(ss, sheetMap));
     } else if (action === "submitServiceAC" || action === "submitServiceAc" || action === "submit_service_ac") {
       return jsonResponse(submitServiceAC(contents, ss, sheetMap));
     } else if (action === "login") {
@@ -575,6 +579,18 @@ function getArmada(ss, sheetMap, e, contents) {
 }
 
 function processFormArmada(ss, sheetMap) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return { success: false, message: "Proses Form Armada sedang berjalan oleh proses lain. Silakan coba lagi." };
+  }
+  try {
+    return processFormArmadaUnlocked(ss, sheetMap);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function processFormArmadaUnlocked(ss, sheetMap) {
   if (!ss) ss = getSpreadsheet();
   if (!sheetMap) sheetMap = getSheetMap(ss);
   
@@ -633,7 +649,13 @@ function processFormArmada(ss, sheetMap) {
           if (!noPolisi) throw new Error("No Polisi tidak boleh kosong.");
           if (isNaN(kmSaatIni) || kmSaatIni < 0) throw new Error("KM Saat Ini harus berupa angka >= 0.");
           if (isNaN(kmServiceTerakhir) || kmServiceTerakhir < 0) throw new Error("KM Service Terakhir harus berupa angka >= 0.");
-          if (isNaN(intervalService) || intervalService <= 0) intervalService = 10000;
+          if (isNaN(intervalService) || intervalService <= 0) {
+            if (row[5] === "" || row[5] === null || row[5] === undefined) {
+              intervalService = 10000;
+            } else {
+              throw new Error("Interval Service harus berupa angka lebih besar dari 0.");
+            }
+          }
 
           var armadaRows = armadaSheet.getDataRange().getValues();
           for (var r = 1; r < armadaRows.length; r++) {
@@ -772,6 +794,33 @@ function processFormArmada(ss, sheetMap) {
     message: "Proses Form Armada selesai. Berhasil: " + processedCount + ", Gagal: " + errorsCount,
     processedCount: processedCount,
     errorsCount: errorsCount
+  };
+}
+
+function getFormArmadaStatus(ss, sheetMap) {
+  if (!ss) ss = getSpreadsheet();
+  if (!sheetMap) sheetMap = getSheetMap(ss);
+  var sheet = getSheetByGid(sheetMap, GID_FORM_ARMADA) ||
+              getSheetByGid(ss, GID_FORM_ARMADA) ||
+              getSheetByNameFromMap(ss, sheetMap, "Form Armada") ||
+              getSheetByNameFromMap(ss, sheetMap, "FORM ARMADA");
+  if (!sheet) {
+    return { success: false, message: "Tab Form Armada tidak ditemukan." };
+  }
+  var counts = { MENUNGGU: 0, DIPROSES: 0, SELESAI: 0, GAGAL: 0 };
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    var status = String(values[i][7] || "").trim().toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status]++;
+  }
+  return {
+    success: true,
+    totalRows: Math.max(0, values.length - 1),
+    menunggu: counts.MENUNGGU,
+    diproses: counts.DIPROSES,
+    selesai: counts.SELESAI,
+    gagal: counts.GAGAL,
+    timestamp: Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyy-MM-dd HH:mm:ss")
   };
 }
 
@@ -4211,7 +4260,4 @@ function ensureAllTriggersInstalled() {
     Logger.log("ensureAllTriggersInstalled silent info: " + e.toString());
   }
 }
-
-
-
 

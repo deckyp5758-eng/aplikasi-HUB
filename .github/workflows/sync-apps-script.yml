@@ -196,38 +196,59 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          
-          echo "1. Memeriksa Health Endpoint (?action=health)..."
-          health_res="$RUNNER_TEMP/h033-health.json"
-          http_code="$(curl --fail-with-body -sS -L -o "$health_res" -w '%{http_code}' "${APPS_SCRIPT_WEB_APP_URL}?action=health" || echo "000")"
-          
-          if [ "$http_code" != "200" ]; then
-            echo "Fallback check ?action=debug..."
-            http_code="$(curl --fail-with-body -sS -L -o "$health_res" -w '%{http_code}' "${APPS_SCRIPT_WEB_APP_URL}?action=debug")"
-          fi
-          
-          test "$http_code" = "200" || {
-            echo "::error::Health check failed with HTTP $http_code."
-            exit 1
-          }
-          
-          python3 - "$health_res" <<'PY'
+
+          retry_json_endpoint() {
+            local action="$1"
+            local output="$2"
+            local attempt code body_type
+            for attempt in $(seq 1 12); do
+              : > "$output"
+              code="$(curl -sS -L --connect-timeout 10 --max-time 35 \
+                -o "$output" -w '%{http_code}' \
+                "${APPS_SCRIPT_WEB_APP_URL}?action=${action}" || true)"
+              body_type="$(python3 - "$output" <<'PY'
           import json, sys
-          with open(sys.argv[1], encoding="utf-8") as h:
-              data = json.load(h)
-          if data.get("success") is not True:
-              raise SystemExit("Backend health check returned success != true")
-          print("Backend health check verified successfully.")
+          try:
+              with open(sys.argv[1], encoding="utf-8") as handle:
+                  data = json.load(handle)
+              print("json-success" if data.get("success") is True else "json-failure")
+          except Exception:
+              print("non-json")
+          PY
+              )"
+              echo "${action} attempt ${attempt}/12: HTTP ${code}, body=${body_type}"
+              if [ "$code" = "200" ] && [ "$body_type" = "json-success" ]; then
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::${action} endpoint did not become healthy after 12 attempts."
+            return 1
+          }
+
+          echo "1. Memeriksa Health Endpoint (?action=health)..."
+          retry_json_endpoint "health" "$RUNNER_TEMP/h033-health.json"
+          python3 - "$RUNNER_TEMP/h033-health.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data = json.load(handle)
+          if data.get("service") != "HUB KEDIRI Apps Script Backend":
+              raise SystemExit("Unexpected backend service in health response")
+          if data.get("environment") != "production":
+              raise SystemExit("Health endpoint is not production")
+          print("Backend health endpoint verified successfully.")
           PY
 
           echo "2. Memeriksa Legacy v1 Contract (?action=getDrivers)..."
-          drivers_res="$RUNNER_TEMP/h033-drivers.json"
-          d_code="$(curl --fail-with-body -sS -L -o "$drivers_res" -w '%{http_code}' "${APPS_SCRIPT_WEB_APP_URL}?action=getDrivers" || echo "000")"
-          test "$d_code" = "200" || {
-            echo "::error::Legacy getDrivers check failed with HTTP $d_code."
-            exit 1
-          }
-          echo "Legacy v1 contract verified successfully."
+          retry_json_endpoint "getDrivers" "$RUNNER_TEMP/h033-drivers.json"
+          python3 - "$RUNNER_TEMP/h033-drivers.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data = json.load(handle)
+          if not isinstance(data.get("drivers"), list):
+              raise SystemExit("Legacy getDrivers response does not contain an array")
+          print("Legacy v1 contract verified successfully.")
+          PY
 
       - name: Rollback on Failure
         if: failure() && env.PREVIOUS_APPS_SCRIPT_VERSION != ''
